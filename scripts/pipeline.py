@@ -44,7 +44,8 @@ def stage_collect(cfg, args) -> dict:
     # --mock 时只走自造的 Mock 数据集：本机没有真实影像，否则下面每个解析器都 skip，
     # 整条链会静默跑出 0 条，看起来像"跑通了"。
     only = ["Mock"] if getattr(args, "mock", False) else None
-    manifest = scan_manifest(cfg, only)
+    scan_stats: Dict = {}
+    manifest = scan_manifest(cfg, only, stats=scan_stats)
     # manifest 是**按图**一行的清单；解析要按数据集名去重后再跑，否则同一数据集会被
     # 解析 N 次（每次都产出 N 条、再靠 id 去重，慢且日志误导）。
     names: List[str] = []
@@ -55,18 +56,17 @@ def stage_collect(cfg, args) -> dict:
                 names.append(ds)
     print(f"[collect] manifest: {len(manifest)} 张图 / {len(names)} 个数据集 {names}")
 
-    # 配置里列了、但 manifest 里一条都没产出的数据集：从 names 反推是推不出来的
-    # （scan_manifest 按文件扫，没文件的数据集根本不出现在结果里），必须拿配置的
-    # 键集合做差集，否则这类静默漏采在日志上完全看不见。
-    # 注意只在跑完全部解析器之后报：数据集可能因列名不符/文件缺失产出 0 条但 manifest
-    # 里仍有记录（按图扫描≠解析成功），所以「名字在不在 names 里」不是唯一的判据。
+    # 配置里列了、但一条都没落进产物的数据集，要在跑完之后单独报出来。
+    # 归因按「本轮新增」是错的：幂等续跑时每个数据集新增都是 0，会把已经采集完成的
+    # 数据集全部误报成「缺标注文件」，真正的漏采反而被淹没。所以判据是**产物文件里
+    # 已有的条数**，按 Sample.dataset 分组统计。
     configured = list(only) if only else list((cfg.data.datasets or {}).keys())
-
-    def _warn_empty(ds: str) -> None:
-        print(f"[warn] 数据集 {ds} 配置了但产出 0 条（缺标注文件？）")
+    # 清单被 manifest_limit 截断时，排在后面的数据集根本没被扫到（文件可能是齐的），
+    # 这种情况归因为"被清单上限截断"，不能说成"缺标注文件"。
+    truncated = bool(scan_stats.get("truncated"))
+    seen_ds = set(scan_stats.get("seen_datasets") or ())
 
     total = 0
-    produced: set = set()
     with JsonlWriter(out) as w:
         for ds in names:
             try:
@@ -75,17 +75,27 @@ def stage_collect(cfg, args) -> dict:
                     if w.write(s):
                         n += 1
                 total += n
-                if n:
-                    produced.add(ds)
                 print(f"[collect] {ds}: 新增 {n}")
             except Exception as e:  # noqa: BLE001
                 print(f"[collect] {ds} 失败，已跳过: {e}")
-    # 两路合并：配置了但不在 manifest（无任何文件）的，与跑了但 0 条（解析失败/缺标注）的。
-    for ds in configured:
-        if ds not in names or ds not in produced:
-            _warn_empty(ds)
     # 审计要覆盖**文件全量**而不是本轮新增：续跑时新增是 0，按新增算会误报"共 0 条"。
     all_samples = [Sample.from_json(d) for d in iter_jsonl(out)]
+    n_by_ds: Dict[str, int] = {}
+    for s in all_samples:
+        n_by_ds[s.dataset] = n_by_ds.get(s.dataset, 0) + 1
+
+    n_truncated, n_missing = 0, 0
+    for ds in configured:
+        if n_by_ds.get(ds):
+            continue
+        if truncated and ds not in seen_ds:
+            n_truncated += 1
+            print(f"[warn] 数据集 {ds} 未进入本轮清单（被 data.manifest_limit="
+                  f"{cfg.get('data.manifest_limit', 20000)} 截断，可能已采到但没扫到；"
+                  f"调大上限后重跑可确认）")
+        else:
+            n_missing += 1
+            print(f"[warn] 数据集 {ds} 配置了但产出 0 条（缺标注文件？）")
     stats = audit_resolution(all_samples)
     print(f"[collect] 本轮新增 {total} 条，文件内共 {len(all_samples)} 条；分辨率审计: {stats}")
     return {"n_new": total, "n": len(all_samples), **stats}

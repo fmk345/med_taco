@@ -282,14 +282,21 @@ def _vindr_resolve_cols(fieldnames: Optional[Sequence[str]]) -> Optional[Dict[st
 
     容错：表头去空白、大小写不敏感、忽略 UTF-8 BOM（Excel 导出的 csv 常带）。
     返回的 dict 是 逻辑名 -> 原始表头，供 DictReader 取行时使用。
+
+    **归一化只用于查找**：DictReader 按 csv 里的**原始表头**建行键，所以映射值必须
+    保存原始字符串。曾经在这里返回 strip 后的名字，导致带空白的表头列名解析成功、
+    但每行 `row.get(...)` 全返回 None，整表静默产出 0 条且一条日志都没有。
     """
     idx: Dict[str, str] = {}
     for c in fieldnames or ():
         if c is None:
             continue
-        name = str(c).strip().lstrip("﻿").strip()
+        raw = str(c)
+        name = raw.strip().lstrip("﻿").strip()
         if name:
-            idx.setdefault(name.lower(), name)
+            # 同一列名出现多次时保留第一个原始表头（DictReader 的行为也是后者覆盖，
+            # 但真实 csv 不会有重复列，这里只需稳定的映射）。
+            idx.setdefault(name.lower(), raw)
     out: Dict[str, str] = {}
     for logical in _VINDR_COLS:
         for alias in _VINDR_COL_ALIASES.get(logical, (logical,)):
@@ -336,8 +343,10 @@ def parse_vindr_cxr(root: str, cfg: Any) -> Iterator[Sample]:
                 c_xmin, c_ymin = cols["x_min"], cols["y_min"]
                 c_xmax, c_ymax = cols["x_max"], cols["y_max"]
                 # rad_id 是可选列：新版官方 csv 有，自造 fixture / 精简版可能没有。
-                c_rad = next((c for c in (reader.fieldnames or [])
-                              if str(c).strip().lstrip("﻿").lower() == "rad_id"), None)
+                # 与 _vindr_resolve_cols 同口径：去空白只用于匹配，取行时用原始表头。
+                c_rad = next((str(c) for c in (reader.fieldnames or [])
+                              if c is not None
+                              and str(c).strip().lstrip("﻿").strip().lower() == "rad_id"), None)
                 for row in reader:
                     key = (str(row.get(c_img) or "").strip(), str(row.get(c_find) or "").strip())
                     if not key[0]:
@@ -930,20 +939,28 @@ def iter_all(cfg: Any, datasets: Optional[Sequence[str]] = None) -> Iterator[Sam
 
 
 def scan_manifest(cfg: Any, datasets: Optional[Sequence[str]] = None,
-                  limit: Optional[int] = None) -> List[dict]:
+                  limit: Optional[int] = None, stats: Optional[dict] = None) -> List[dict]:
     """产出 `{dataset, image, box_count, tier, license}` 清单（按图去重）。
 
     limit 默认取 cfg.data.manifest_limit（缺省 20000），只用于盘点、不用于训练，
     所以截断只 warn 不报错。
+
+    `stats`（可选，就地写入）用于把「清单是完整的还是被截断的」告诉调用方：
+      - `truncated`: 是否撞到上限提前 break；
+      - `seen_datasets`: 截断前**实际出现过**的数据集名。
+    调用方据此区分「数据集排在清单上限之后没来得及扫到」和「真的没有标注文件」——
+    两者在产物上都表现为「这个数据集一条都没有」，但归因完全不同。
     """
     lim = int(limit if limit is not None else (_get(cfg, "data.manifest_limit", 20000) or 20000))
     seen: Dict[Tuple[str, str], dict] = {}
+    truncated = False
     for s in iter_all(cfg, datasets):
         key = (s.dataset, s.image)
         row = seen.get(key)
         if row is None:
             if len(seen) >= lim:
                 _log("warn", f"scan_manifest 达到上限 {lim}，提前结束")
+                truncated = True
                 break
             seen[key] = {
                 "dataset": s.dataset,
@@ -957,6 +974,9 @@ def scan_manifest(cfg: Any, datasets: Optional[Sequence[str]] = None,
             row["box_count"] += len(s.boxes)
             if s.boxes:
                 row["tier"] = "A"
+    if stats is not None:
+        stats["truncated"] = truncated
+        stats["seen_datasets"] = {r["dataset"] for r in seen.values()}
     return list(seen.values())
 
 

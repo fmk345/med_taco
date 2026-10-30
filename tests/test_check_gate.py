@@ -9,10 +9,20 @@
   3. answer_change_rate：旧实现拿原始字符串比，同义改写/标点/单位差异算 changed；
      现在过 grader.normalize，原始值另存 raw_changed；
   4. tool_call_rate：混合文件里 no_tool 行把分母撑大，调用率被机械拉低。
+  5. 非 dict 行（``null`` / ``[1,2]`` / ``"abc"``）会让旧实现整份闸门崩在
+     AttributeError；现在入口过滤并计数；
+  6. format_ok 藏在 ``meta`` 里、或是字符串布尔（``"false"``）时的解析口径；
+  7. 严格解析取**最后一个非空** ``<answer>``，与 ``eval_gate._strict_answer`` 一致；
+  8. 截断轨迹（没有 ``<answer>``）不能把整段文本当答案；
+  9. 一轮多 ``<tool_call>`` 的计数口径；
+ 10. format_ok_source 四态；答 change 的 (dataset, id) 配对与重复行计数；
+ 11. over_call_rate 两条分支返回同一套键；has_condition 认 view 别名；
+ 12. 工具成功观测里模型自己 print 的 stdout 不能触发失败判定。
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 from typing import Any, Dict, List
 
@@ -312,3 +322,325 @@ def test_tool_success_rate_flows_from_messages() -> None:
     rep = C.evaluate_gate(recs, {})
     assert rep["details"]["tool_success_rate"] == pytest.approx(0.5)
     assert rep["details"]["tool_call_rate"] == pytest.approx(1.0)
+
+
+# ============================================================ 5. 非 dict 行
+
+
+@pytest.mark.parametrize("bad", [None, [1, 2], "abc", 3, True, 1.5])
+def test_evaluate_gate_survives_non_dict_lines(bad: Any) -> None:
+    """合法 JSON 但不是对象的行不能让闸门崩；跳过并计入 n_bad_lines。
+
+    旧实现：answer_change_rate 里 ``r.get`` → AttributeError，整份报告崩掉。
+    """
+    good = {"id": "1", "answer": "a", "n_calls": 1, "format_ok": True}
+    rep = C.evaluate_gate([bad, good], {})
+    assert rep["n"] == 1
+    assert rep["n_bad_lines"] == 1
+    assert rep["details"]["format_valid"]["n"] == 1
+
+
+def test_evaluate_gate_all_bad_lines_reports_nan_not_crash() -> None:
+    rep = C.evaluate_gate([None, [1, 2], "abc"], {})
+    assert rep["n"] == 0 and rep["n_bad_lines"] == 3
+    assert rep["passed"] is False  # 没有样本，不许放行
+    assert rep["details"]["format_valid_rate"] != rep["details"]["format_valid_rate"]
+
+
+def test_baseline_with_non_dict_lines_does_not_crash() -> None:
+    """baseline 分支旧实现直接 ``r["id"]``，非 dict 行会 TypeError/KeyError。"""
+    recs = [{"id": "1", "correct": True, "answer": "a", "n_calls": 1}]
+    base = [None, [1, 2], {"id": "1", "correct": False}]
+    rep = C.evaluate_gate(recs, {}, baseline=base)
+    vb = rep["details"]["vs_baseline"]
+    assert vb["n_common"] == 1
+    assert vb["n_bad_lines"] == 2
+
+
+def test_sanitize_counts_and_preserves_order() -> None:
+    good, n_bad = C._sanitize([{"id": "b"}, [1], {"id": "a"}, None])
+    assert n_bad == 2
+    assert [g["id"] for g in good] == ["b", "a"]
+
+
+# ============================================================ 6. format_ok 来源与布尔解析
+
+
+def test_format_ok_nested_in_meta_is_honored() -> None:
+    """meta 里的显式 format_ok=False 不能被当成缺失而按"答案非空"判合格。
+
+    旧实现读 ``r.get("format_ok")``，对 messages 形态拿到 None → n_inferred=1、
+    rate=1.0、degraded=True。
+    """
+    rec = {"id": "a", "messages": [{"role": "assistant", "content": "<answer>yes</answer>"}],
+           "meta": {"format_ok": False}}
+    fv = C.format_valid_report([rec])
+    assert fv["n_explicit"] == 1
+    assert fv["n_inferred"] == 0
+    assert fv["degraded"] is False
+    assert fv["rate"] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("raw_value,expected", [
+    ("false", False), ("False", False), ("0", False), ("no", False), ("FAIL", False),
+    ("true", True), ("1", True), ("yes", True),
+    (0, False), (1, True), (False, False), (True, True),
+])
+def test_parse_bool_handles_string_booleans(raw_value: Any, expected: bool) -> None:
+    assert C.parse_bool(raw_value) is expected
+
+
+@pytest.mark.parametrize("raw_value", ["maybe", "", None, float("nan"), [], {}])
+def test_parse_bool_unknown_returns_none(raw_value: Any) -> None:
+    assert C.parse_bool(raw_value) is None
+
+
+def test_string_false_format_ok_is_not_counted_as_pass() -> None:
+    """旧实现 ``bool("false") is True`` → rate=1.0、degraded=False。"""
+    fv = C.format_valid_report([{"id": "a", "answer": "x", "format_ok": "false"}])
+    assert fv["n_explicit"] == 1
+    assert fv["rate"] == pytest.approx(0.0)
+    assert C.format_valid_report([{"id": "a", "answer": "x",
+                                   "format_ok": "true"}])["rate"] == pytest.approx(1.0)
+
+
+# ============================================================ 7. 严格解析口径对齐 eval_gate
+
+
+def test_strict_parse_takes_last_nonempty_answer_block() -> None:
+    """``<answer></answer><answer>5mm</answer>`` 应与 eval_gate 一样判合格（不依赖
+    eval_gate 的 import：那边取 reversed 后的第一个非空块，等价于"最后一个非空"）。"""
+    raw = "<answer></answer><answer>5mm</answer>"
+    assert C.last_nonempty_answer(raw) == "5mm"
+    assert C._strict_answer_ok({"raw": raw}) is True
+    assert C.format_valid_report([{"id": "a", "raw": raw}])["rate"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("<answer>5mm</answer><answer>6mm</answer>", "6mm"),
+    ("<think>x</think>\n<answer>\n 5 mm \n</answer>\n<answer></answer>", "5 mm"),
+    ("<answer>a</answer>trailing", "a"),
+    ("<answer>a</answer><answer>\n \t \n</answer>", "a"),
+])
+def test_last_nonempty_answer_picks_last_block(raw: str, expected: str) -> None:
+    """与 ``eval_gate._strict_answer`` 同口径：取最后一个非空块。"""
+    assert C.last_nonempty_answer(raw) == expected
+
+
+def test_strict_parse_all_blocks_empty_fails() -> None:
+    raw = "<answer></answer><answer>   </answer>"
+    assert C._strict_answer_ok({"raw": raw}) is False
+    assert C.last_nonempty_answer(raw) is None
+
+
+# ============================================================ 8. 截断轨迹不伪造答案
+
+
+def test_truncated_trajectory_without_answer_is_not_valid() -> None:
+    """最后一轮是 tool_call/半句话时没有答案：旧实现把整段文本当 answer，
+    格式闸门按"答案非空"判合格（rate=1.0）。
+
+    现在 answer 保持空 → n_inferred 仍走非空判据，但值为 False。
+    """
+    rec = {"id": "a", "messages": [
+        {"role": "user", "content": "问题"},
+        {"role": "assistant", "content": "<tool_call>crop(box=[0,0,1,1])</tool_call>"},
+        {"role": "user", "content": C.OBS_HEADER + "ok" + C.OBS_TAIL},
+        {"role": "assistant", "content": "<think>我还需要再看一"},
+    ]}
+    flat = C._flat(rec)
+    assert flat["answer"] == ""
+    fv = C.format_valid_report([rec])
+    assert fv["rate"] == pytest.approx(0.0)
+    assert fv["degraded"] is True
+
+
+def test_answer_from_last_assistant_message_with_tag() -> None:
+    rec = {"messages": [
+        {"role": "assistant", "content": "<answer>first</answer>"},
+        {"role": "assistant", "content": "中间话"},
+        {"role": "assistant", "content": "<think>y</think><answer>final</answer>"},
+    ]}
+    assert C._flat(rec)["answer"] == "final"  # 中间无标签的轮不覆盖
+
+
+def test_content_blocks_form_is_supported() -> None:
+    rec = {"messages": [{"role": "assistant",
+                         "content": [{"type": "text", "text": "<answer>blk</answer>"}]}]}
+    assert C._flat(rec)["answer"] == "blk"
+
+
+# ============================================================ 9. n_calls 与 tool_oks 对齐
+
+
+def test_two_tool_calls_in_one_turn_count_as_two() -> None:
+    """一轮并发两个 tool_call：n_calls 按出现次数计（旧实现按轮数 → 1）。"""
+    rec = {"id": "a", "messages": [
+        {"role": "user", "content": "问题"},
+        {"role": "assistant", "content":
+            "<tool_call>crop(box=[0,0,1,1])</tool_call><tool_call>crop(box=[1,1,2,2])</tool_call>"},
+        {"role": "user", "content": C.OBS_HEADER + "a" + C.OBS_TAIL},
+        {"role": "user", "content": C.OBS_HEADER + "b" + C.OBS_TAIL},
+        {"role": "assistant", "content": "<answer>x</answer>"},
+    ]}
+    flat = C._flat(rec)
+    assert flat["n_calls"] == 2
+    assert flat["tool_oks"] == [True, True]
+    assert len(flat["tool_oks"]) == flat["n_calls"]
+    assert "diag_calls_vs_obs" not in flat
+
+
+def test_call_obs_mismatch_is_diagnosed() -> None:
+    """调了两次只回一条观测：不算错，但要在字段里暴露，别静默。"""
+    rec = {"messages": [
+        {"role": "assistant", "content": "<tool_call>a</tool_call><tool_call>b</tool_call>"},
+        {"role": "user", "content": C.OBS_HEADER + "x" + C.OBS_TAIL},
+    ]}
+    flat = C._flat(rec)
+    assert flat["n_calls"] == 2
+    assert flat["diag_calls_vs_obs"] == {"n_calls": 2, "n_obs": 1}
+
+
+def test_avg_calls_reflects_tool_call_occurrences() -> None:
+    rec = {"id": "a", "messages": [
+        {"role": "assistant", "content": "<tool_call>a</tool_call><tool_call>b</tool_call>"},
+        {"role": "user", "content": C.OBS_HEADER + "x" + C.OBS_TAIL},
+        {"role": "user", "content": C.OBS_HEADER + "y" + C.OBS_TAIL},
+        {"role": "assistant", "content": "<answer>z</answer>"},
+    ]}
+    rep = C.evaluate_gate([rec], {})
+    assert rep["details"]["avg_calls"] == pytest.approx(2.0)
+
+
+# ============================================================ 10. format_ok_source 四态
+
+
+def test_format_ok_source_strict_only() -> None:
+    """纯 strict 解析旧实现被错标成 explicit。"""
+    rep = C.evaluate_gate([{"id": "a", "raw": "<answer>5mm</answer>"}], {})
+    assert rep["details"]["format_valid"]["n_explicit"] == 0
+    assert rep["details"]["format_valid"]["n_strict_parsed"] == 1
+    assert rep["details"]["format_ok_source"] == "strict"
+
+
+def test_format_ok_source_all_four_states() -> None:
+    def src(recs: List[Dict[str, Any]]) -> str:
+        return C.evaluate_gate(recs, {})["details"]["format_ok_source"]
+
+    assert src([{"id": "1", "format_ok": True}]) == "explicit"
+    assert src([{"id": "1", "raw": "<answer>x</answer>"}]) == "strict"
+    assert src([{"id": "1", "answer": "x"}]) == "inferred_from_nonempty"
+    assert src([{"id": "1", "format_ok": True},
+                {"id": "2", "raw": "<answer>x</answer>"}]) == "mixed"
+    assert src([{"id": "1", "format_ok": True},
+                {"id": "2", "answer": "x"}]) == "mixed"
+    assert src([]) == "none"
+
+
+# ============================================================ 11. answer_change_rate 配对与重复
+
+
+def test_answer_change_pairs_by_dataset_and_id() -> None:
+    """不同数据集同 id 不能配成一对（旧实现 n_paired=1、rate=1.0）。"""
+    recs = [
+        {"id": 1, "dataset": "A", "condition": "gold_box", "answer": "x"},
+        {"id": 1, "dataset": "B", "condition": "no_tool", "answer": "y"},
+    ]
+    chg = C.answer_change_rate(recs)
+    assert chg["n_paired"] == 0
+    assert chg["rate"] != chg["rate"]  # nan
+    # 同 dataset 同 id 仍能正常配对
+    recs.append({"id": 1, "dataset": "A", "condition": "no_tool", "answer": "x"})
+    chg = C.answer_change_rate(recs)
+    assert chg["n_paired"] == 1 and chg["n_changed"] == 0
+
+
+def test_answer_change_counts_duplicate_rows() -> None:
+    """同 (dataset, id, condition) 重复行是 last-write-wins，必须计数。"""
+    recs = [
+        {"id": "1", "dataset": "A", "condition": "gold_box", "answer": "x"},
+        {"id": "1", "dataset": "A", "condition": "gold_box", "answer": "z"},
+        {"id": "1", "dataset": "A", "condition": "no_tool", "answer": "x"},
+    ]
+    chg = C.answer_change_rate(recs)
+    assert chg["n_paired"] == 1
+    assert chg["n_duplicate"] == 1
+    assert chg["n_changed"] == 1  # 后者覆盖前者（z vs x）
+
+
+def test_answer_change_ignores_non_dict_rows() -> None:
+    chg = C.answer_change_rate([None, [1, 2]])
+    assert chg["n_bad_lines"] == 2 and chg["n_paired"] == 0
+
+
+# ============================================================ 12. over_call_rate / has_condition
+
+
+def test_over_call_rate_key_schema_is_stable() -> None:
+    """两条分支必须同一套键（旧实现早退分支缺 n_without_needs_tool）。"""
+    keys = {"n", "n_called", "rate", "denominator", "n_without_needs_tool"}
+    empty = C.over_call_rate([{"id": "1", "needs_tool": True, "n_calls": 1}])
+    normal = C.over_call_rate([{"id": "1", "needs_tool": False, "n_calls": 1}])
+    none_field = C.over_call_rate([{"id": "1", "n_calls": 1}])
+    assert set(empty) == keys
+    assert set(normal) == keys
+    assert set(none_field) == keys
+    assert none_field["n_without_needs_tool"] == 1
+
+
+def test_answer_change_note_recognizes_view_alias() -> None:
+    """只有 view 字段（无 condition）时，不该拿到"无 condition 配对"的误导性 note。
+
+    旧实现 has_condition 只认 condition → 明明没有可配对行，note 却指向字段缺失。
+    """
+    recs = [{"id": "1", "view": "full", "answer": "a", "n_calls": 1}]
+    rep = C.evaluate_gate(recs, {})
+    chk = [c for c in rep["checks"] if c["gate"] == "answer_change_rate"][0]
+    assert chk["passed"] is False
+    # 有 view 字段（= 有配对口径），只是这题没配对上，note 是通用"指标缺失"，
+    # 而不是"输入无 condition 配对"这种字段缺失的误导说明。
+    assert chk["note"] == "指标缺失，按不通过处理"
+
+
+# ============================================================ 13. stdout 不触发失败判定
+
+
+def _obs_text(body: str) -> str:
+    return C.OBS_HEADER + body + C.OBS_TAIL
+
+
+def test_stdout_error_word_does_not_flag_failure() -> None:
+    """模型自己 print 的 stdout 里有 "no error found" 不能记成失败调用。
+
+    旧实现：obs_is_error(该观测) == True → tool_success_rate 被压低。
+    """
+    text = _obs_text("\n<stdout>\nno error found\n</stdout>\n")
+    assert C.obs_is_error(text) is False
+    assert C._flat(_obs("\n<stdout>\nno error found\n</stdout>\n"))["tool_oks"] == [True]
+
+
+def test_stdout_stripped_but_structural_failure_still_detected() -> None:
+    """剥 stdout 之后的结构性失败标记仍要抓到（sandbox 成功时没有这个前缀）。"""
+    text = _obs_text("\n<stdout>\n12.3\n</stdout>\n工具执行失败：执行超时（>30s）")
+    assert C.obs_is_error(text) is True
+
+
+@pytest.mark.parametrize("body", [
+    "<stdout>Error: 内部变量名 error_flag\n</stdout>",
+    "<STDOUT>\r\nToolUnavailable 是下游概念\r\n</STDOUT>",  # 大小写/CRLF 的肉眼看不出差异，但标签必须可剥
+])
+def test_stdout_tag_matching_is_sloppy_tolerant(body: str) -> None:
+    assert C.obs_is_error(_obs_text(body)) is False
+
+
+def test_legacy_markers_are_last_resort_only() -> None:
+    """旧关键词仍是兜底（不剥 stdout 时照旧生效），结构性标记优先且不混在一起。"""
+    assert C.obs_is_error("我遇到了 error，无法继续") is True
+    assert "错误" not in C.STRUCTURAL_FAILURE_MARKERS
+    assert set(C.STRUCTURAL_FAILURE_MARKERS).issubset(C.TOOL_FAILURE_MARKERS)
+
+
+def test_stdout_regex_strips_multiline_body() -> None:
+    assert C._STDOUT_BLOCK_RE.search("<stdout>\na\nb\nerror\n</stdout>") is not None
+    body = C._STDOUT_BLOCK_RE.sub(" ", "<stdout>\na\nerror\n</stdout>")
+    assert "error" not in body and re.search(r"error", body) is None

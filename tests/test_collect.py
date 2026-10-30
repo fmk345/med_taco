@@ -26,6 +26,7 @@ from medtaco.data.collect import (
     scan_manifest,
 )
 from medtaco.utils.config import Cfg
+from medtaco.utils.io import iter_jsonl
 from medtaco.utils.schema import Sample
 
 
@@ -156,15 +157,82 @@ def test_vindr_parse_official_class_name_header(tmp_path):
     (root / "annotations_train.csv").write_text(csv_text, encoding="utf-8")
     out = list(parse_vindr_cxr(str(root), _cfg(tmp_path)))
     assert len(out) == 3  # (im1,Nodule/Mass) / (im1,Cardiomegaly) / (im2,Atelectasis)
-    # 标签落到 meta["finding"] 与 box.label 上，与旧列名的行为一致
-    assert all(s.meta["finding"] and s.boxes for s in out)
-    assert all(s.boxes[0].label == s.meta["finding"] for s in out)
+    # 标签落到 meta["finding"] 与 box.label 上，与旧列名的行为一致。
+    # 断言写期望值而不是 `s.boxes[0].label == s.meta["finding"]`：后者两边同源于
+    # key[1]，恒真，哪怕取错列（比如把 class_id 当 finding）也照样通过。
+    assert sorted(s.meta["finding"] for s in out) == ["Atelectasis", "Cardiomegaly", "Nodule/Mass"]
+    assert sorted(s.boxes[0].label for s in out) == ["Atelectasis", "Cardiomegaly", "Nodule/Mass"]
     nm = [s for s in out if s.meta["finding"] == "Nodule/Mass"][0]
     assert len(nm.boxes) == 2 and nm.meta["n_rads"] == 2
     assert nm.boxes[0].as_tuple() == (10.0, 10.0, 50.0, 50.0)
     assert nm.boxes[1].as_tuple() == (12.0, 11.0, 52.0, 51.0)
     assert nm.tier == "A" and nm.meta["split"] == "train"
     assert nm.image.endswith("im1.jpg")
+
+
+def test_vindr_header_with_spaces(tmp_path):
+    """表头带空格（Excel 导出常见）必须能解析出样本，而不是静默 0 条。
+
+    回归点：去空白只该用于**查找**；DictReader 按原始表头建行键，映射值若存 strip
+    后的名字，`row.get()` 全返回 None → 整表 continue，且一条日志都没有。
+    """
+    root = tmp_path / "raw" / "VinDr-CXR"
+    (root / "train").mkdir(parents=True)
+    _noise_png(str(root / "train" / "im1.jpg"), seed=21)
+    csv_text = (
+        "image_id , rad_id , class_name , class_id, x_min , y_min, x_max , y_max\n"
+        "im1,R1,Nodule/Mass,11,10,10,50,50\n"
+        "im1,R2,Nodule/Mass,11,12,11,52,51\n"
+        "im2,R1,Atelectasis,0,1,1,20,20\n"
+    )
+    (root / "annotations_train.csv").write_text(csv_text, encoding="utf-8")
+    out = list(parse_vindr_cxr(str(root), _cfg(tmp_path)))
+    assert len(out) == 2
+    assert sorted(s.meta["finding"] for s in out) == ["Atelectasis", "Nodule/Mass"]
+    nm = [s for s in out if s.meta["finding"] == "Nodule/Mass"][0]
+    assert nm.meta["image_id"] == "im1"          # image_id 列名匹配被正确还原
+    assert len(nm.boxes) == 2                    # 坐标列同样按原始表头取到
+    assert nm.boxes[1].as_tuple() == (12.0, 11.0, 52.0, 51.0)
+    assert nm.meta["n_rads"] == 2                # 可选列 rad_id 的容错也要生效
+    assert nm.meta["split"] == "train"
+
+
+def test_vindr_header_with_tabs(tmp_path):
+    """表头用制表符分隔/包裹（'\timage_id\t'）时同样要能解析。"""
+    root = tmp_path / "raw" / "VinDr-CXR"
+    root.mkdir(parents=True)
+    csv_text = (
+        "image_id\t,\tclass_name,\tx_min\t,\ty_min,\tx_max,\ty_max\n"
+        "im7\t,Effusion,1,2,30,40\n"
+    )
+    (root / "annotations_train.csv").write_text(csv_text, encoding="utf-8")
+    out = list(parse_vindr_cxr(str(root), _cfg(tmp_path)))
+    assert len(out) == 1
+    # 值也带空白时按 strip 后的内容落库（image_id 是行值，不是表头）
+    assert out[0].meta["image_id"] == "im7"
+    assert out[0].meta["finding"] == "Effusion"
+    assert out[0].boxes[0].as_tuple() == (1.0, 2.0, 30.0, 40.0)
+    assert out[0].meta["n_rads"] == 0            # 无 rad_id 列
+
+
+def test_vindr_header_with_bom(tmp_path):
+    """真 BOM 字节开头：必须用 utf-8-sig 写文件，否则测的不是 BOM 分支。"""
+    root = tmp_path / "raw" / "VinDr-CXR"
+    (root / "train").mkdir(parents=True)
+    _noise_png(str(root / "train" / "im3.jpg"), seed=23)
+    csv_text = (
+        "image_id,rad_id,class_name,class_id,x_min,y_min,x_max,y_max\n"
+        "im3,R1,Nodule/Mass,11,10,10,50,50\n"
+    )
+    path = root / "annotations_train.csv"
+    path.write_text(csv_text, encoding="utf-8-sig")
+    assert path.read_bytes().startswith(b"\xef\xbb\xbf")   # 确认 BOM 真的写进去了
+    out = list(parse_vindr_cxr(str(root), _cfg(tmp_path)))
+    assert len(out) == 1
+    assert out[0].meta["image_id"] == "im3"      # 首列没被读成 '﻿image_id'
+    assert out[0].meta["finding"] == "Nodule/Mass"
+    assert out[0].meta["n_rads"] == 1
+    assert out[0].boxes[0].as_tuple() == (10.0, 10.0, 50.0, 50.0)
 
 
 def test_vindr_official_header_without_rad_id(tmp_path):
@@ -387,6 +455,105 @@ def test_scan_manifest(tmp_path):
 def test_scan_manifest_limit(tmp_path):
     cfg = _tiny_dataset(tmp_path)
     assert len(scan_manifest(cfg, datasets=["MS-CXR"], limit=1)) == 1
+
+
+def test_scan_manifest_reports_truncation(tmp_path):
+    """截断要能被调用方看见：stats 里标 truncated 并给出实际扫到的数据集。"""
+    cfg = _tiny_dataset(tmp_path)
+    stats = {}
+    rows = scan_manifest(cfg, datasets=["MS-CXR"], limit=1, stats=stats)
+    assert len(rows) == 1
+    assert stats["truncated"] is True
+    assert stats["seen_datasets"] == {"MS-CXR"}
+
+    stats2 = {}
+    scan_manifest(cfg, datasets=["MS-CXR"], limit=100, stats=stats2)
+    assert stats2["truncated"] is False and stats2["seen_datasets"] == {"MS-CXR"}
+
+
+# ---------------------------------------------------------------- stage_collect（scripts/pipeline.py）
+
+
+def _pipeline():
+    """scripts/pipeline.py 不是包，按路径导入一次并缓存。"""
+    import importlib.util
+
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "scripts", "pipeline.py")
+    spec = importlib.util.spec_from_file_location("_medtaco_pipeline_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _stage_args(mock: bool = False):
+    """mock=False：让 stage_collect 走配置里的真实数据集（tmp 目录里自造的 MS-CXR）。
+
+    mock=True 会把数据集限定成 ["Mock"]，那就测不到"配置了但没产出"的判定逻辑了。
+    """
+    from types import SimpleNamespace
+
+    return SimpleNamespace(mock=mock)
+
+
+def _pipeline_cfg(tmp_path, datasets) -> Cfg:
+    """stage_collect 需要 paths.samples；数据集目录按 _tiny_dataset 的约定建。"""
+    cfg = _tiny_dataset(tmp_path)
+    cfg.set("paths.samples", str(tmp_path / "samples"))
+    cfg.set("data.datasets", datasets)
+    return cfg
+
+
+def _run_stage_collect(cfg, capsys) -> str:
+    _pipeline().stage_collect(cfg, _stage_args())
+    return capsys.readouterr().out
+
+
+def test_stage_collect_clean_run_no_warn(tmp_path, capsys):
+    """干净目录首次跑：有产出，且不该出现任何 [warn]。"""
+    cfg = _pipeline_cfg(tmp_path, {"MS-CXR": {"tier": "A"}})
+    out = _run_stage_collect(cfg, capsys)
+    assert "[collect] MS-CXR: 新增 3" in out
+    assert "[warn]" not in out
+    samples = [Sample.from_json(d) for d in iter_jsonl(str(tmp_path / "samples" / "samples.jsonl"))]
+    assert len(samples) == 3
+
+
+def test_stage_collect_resume_does_not_warn(tmp_path, capsys):
+    """幂等续跑是正常路径：文件里已有数据时新增 0 条，但**不能**报「产出 0 条」。
+
+    回归点：判定按「本轮 write 返回 True 的条数」→ 续跑全部 0 → 每个已采完的数据集
+    被误报，真漏采（另一个数据集确实没有标注）反而被淹没。
+    """
+    cfg = _pipeline_cfg(tmp_path, {"MS-CXR": {"tier": "A"}})
+    _run_stage_collect(cfg, capsys)
+    first = capsys.readouterr().out
+    assert "[warn]" not in first
+
+    out = _run_stage_collect(cfg, capsys)
+    assert "[collect] MS-CXR: 新增 0" in out
+    assert "[warn]" not in out          # 已采完的数据集不得被误报
+    assert "文件内共 3 条" in out
+
+
+def test_stage_collect_resume_still_warns_for_really_empty_dataset(tmp_path, capsys):
+    """续跑时仍要报出真正没有产出的数据集（不能为了消误报把告警整个关掉）。"""
+    cfg = _pipeline_cfg(tmp_path, {"MS-CXR": {"tier": "A"},
+                                   "SLAKE": {"tier": "A"}})   # SLAKE 目录不存在
+    _run_stage_collect(cfg, capsys)
+    capsys.readouterr()
+    out = _run_stage_collect(cfg, capsys)
+    assert "[warn] 数据集 SLAKE 配置了但产出 0 条" in out
+    assert "数据集 MS-CXR" not in out.split("[warn]")[-1]
+
+
+def test_stage_collect_manifest_limit_blames_truncation(tmp_path, capsys):
+    """被 manifest_limit 截断时，排在后面的数据集要归因为「截断」，不是「缺标注文件」。"""
+    cfg = _pipeline_cfg(tmp_path, {"MS-CXR": {"tier": "A"}, "SLAKE": {"tier": "A"}})
+    cfg.set("data.manifest_limit", 1)          # 只能扫到 MS-CXR 的第一张图
+    out = _run_stage_collect(cfg, capsys)
+    assert "被 data.manifest_limit=1 截断" in out
+    assert "[warn] 数据集 SLAKE 配置了但产出 0 条（缺标注文件？）" not in out
 
 
 # ---------------------------------------------------------------- Mock

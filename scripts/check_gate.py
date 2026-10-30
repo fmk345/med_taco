@@ -44,7 +44,7 @@ from medtaco.utils.io import atomic_write_json, iter_jsonl
 #: 从 assistant 文本里抽 <answer>...</answer>（非贪婪，容忍前后多余的 think 文本）
 _ANSWER_RE = re.compile(r"<answer>(.*?)</answer>", re.S)
 
-#: 工具**失败**的可靠判据（小写比较）。
+#: 工具**失败**的**结构性**判据（小写比较）。
 #:
 #: 依据（不改 ``training_set.py`` 的输出格式，只为解析侧提供共享判定）：
 #:   - ``工具执行失败：{error}`` —— ``training_set.py`` 注入失败观测的**唯一**入口
@@ -59,28 +59,113 @@ _ANSWER_RE = re.compile(r"<answer>(.*?)</answer>", re.S)
 #: 旧实现只认 ``错误``/``error``，而上面这些串**一个都不含**这两个词，于是失败调用
 #: 被全量误判为 ok=True，tool_success_rate 虚高。这里放宽到上述集合，并保留
 #: 旧关键词以兼容外部产物（历史评测 jsonl 可能在 error 体里写字面量 "错误"）。
-TOOL_FAILURE_MARKERS: Tuple[str, ...] = (
+STRUCTURAL_FAILURE_MARKERS: Tuple[str, ...] = (
     "工具执行失败",
     "执行超时",
     "退化框",
     "需要参数",
     "未知工具",
     "toolunavailable",
-    "错误",   # 旧关键词，向后兼容
-    "error",  # 旧关键词，向后兼容
 )
+
+#: 旧关键词，只作**最后兜底**。风险见 ``obs_is_error`` 的注释。
+LEGACY_FAILURE_MARKERS: Tuple[str, ...] = (
+    "错误",
+    "error",
+)
+
+#: 兼容旧名：外部可能已 import 这个常量。顺序不变（结构性在前，兜底在后）。
+TOOL_FAILURE_MARKERS: Tuple[str, ...] = STRUCTURAL_FAILURE_MARKERS + LEGACY_FAILURE_MARKERS
+
+#: 沙箱里模型自己 ``print`` 的 stdout 段。``sandbox._format_result`` 会把捕获的
+#: stdout 直接拼进 ``result.text``，模型完全可以打出 "no error found" 这种正文。
+#: 这类内容出现在工具**成功**的观测里，不能当失败证据，匹配前整段剥掉。
+_STDOUT_BLOCK_RE = re.compile(r"<stdout>.*?</stdout>", re.S | re.I)
 
 
 def obs_is_error(text: str) -> bool:
     """判断一条工具观测文本是否代表**失败**调用。
 
-    只剥掉观测头尾（``【工具返回】`` / ``【工具返回结束】``）再匹配，不做其它改写：
-    成功观测的主体是工具返回文本（如 ``12.34 mm``）或图片占位符，不会命中
-    ``TOOL_FAILURE_MARKERS``。
+    判定顺序（先结构、后文本，尽量避免把"成功但正文里带 error 字样"误判成失败）：
+
+      1. 剥掉观测头尾（``【工具返回】`` / ``【工具返回结束】``）和 ``<stdout>…</stdout>``
+         段——后者是模型自己 print 的内容，不是工具判定的失败信号；
+      2. 命中 ``STRUCTURAL_FAILURE_MARKERS`` 即判失败（这是工具侧注入的失败标记，
+         成功观测的正文里不会出现）；
+      3. 最后才用 ``LEGACY_FAILURE_MARKERS``（``错误`` / ``error``）兜底。
+
+    **风险提示**：第 3 步是无边界子串匹配，若上游把不带 ``<stdout>`` 标签的模型
+    stdout 原样拼进观测（当前 ``sandbox`` 就是如此），正文里出现 "no error found"
+    一类说法仍会被记成失败。这是继承下来的偏差，保留它只为兼容老产物里字面量
+    "错误"/"error" 的失败体；结构性判据能覆盖的情形不应依赖它。
     """
     body = str(text or "").replace(OBS_HEADER, " ").replace(OBS_TAIL, " ")
+    body = _STDOUT_BLOCK_RE.sub(" ", body)
     low = body.lower()
-    return any(m in low for m in TOOL_FAILURE_MARKERS)
+    if any(m in low for m in STRUCTURAL_FAILURE_MARKERS):
+        return True
+    return any(m in low for m in LEGACY_FAILURE_MARKERS)
+
+
+def parse_bool(value: Any) -> Optional[bool]:
+    """把 ``format_ok`` 之类的字段解析成 bool；无法解析返回 None（按"缺失"处理）。
+
+    评测 jsonl 里这个字段的来源很杂：Python 写出来的真 bool、CSV/YAML 落地后的
+    ``"true"``/``"false"``、``0``/``1``。旧实现直接 ``bool(value)``，于是字符串
+    ``"false"`` 被当成 True，格式闸门给出满分的假象。
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        if value != value:  # nan
+            return None
+        return bool(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("true", "1", "yes", "y", "ok", "pass", "passed"):
+            return True
+        if s in ("false", "0", "no", "n", "fail", "failed"):
+            return False
+        return None
+    return None
+
+
+def _is_dict(x: Any) -> bool:
+    return isinstance(x, dict)
+
+
+def _sanitize(records: Sequence[Any]) -> Tuple[List[Dict[str, Any]], int]:
+    """滤掉非 dict 行（``null`` / ``[1,2]`` / ``"abc"``），返回 (好行, 坏行数)。
+
+    ``iter_jsonl`` 只挡 JSONDecodeError；合法但不是对象的行会原样流进来，让下游
+    ``r.get(...)`` 直接 AttributeError，整份闸门崩掉。坏行不能静默吞——计数进报告。
+    """
+    good: List[Dict[str, Any]] = []
+    n_bad = 0
+    for r in records:
+        if _is_dict(r):
+            good.append(r)
+        else:
+            n_bad += 1
+    return good, n_bad
+
+
+def last_nonempty_answer(text: str) -> Optional[str]:
+    """取**最后一个非空** ``<answer>`` 块的内容；没有则返回 None。
+
+    与 ``scripts/eval_gate.py::_strict_answer`` 同口径（那边取 reversed 后的第一个
+    非空块，等价于"最后一个非空块"）。两边口径必须一致，否则同一份输出在
+    eval_gate 里 format_ok=True、到闸门这里被判不合格，format_valid_rate 系统性偏低。
+    这里不 import eval_gate（避免引入执行期依赖与循环），只对齐规则。
+    """
+    matches = _ANSWER_RE.findall(str(text or ""))
+    for m in reversed(matches):
+        ans = " ".join(str(m).split()).strip()
+        if ans:
+            return ans
+    return None
 
 # 与 configs/default.yaml: sft.gate 同名；config 缺字段时用这里的默认值
 DEFAULT_GATE: Dict[str, float] = {    "min_format_valid_rate": 0.99,
@@ -99,10 +184,17 @@ def _from_messages(rec: Dict[str, Any]) -> Dict[str, Any]:
     看起来像"模型没学会用工具"，实际只是读错了字段。
 
     能推出来的：
-      - ``answer``：最后一条 assistant 文本里 ``<answer>..</answer>`` 的内容
-        （没有标签就取整段）
-      - ``n_calls``：带 ``<tool_call>`` 的 assistant 轮数
-      - ``tool_oks``：每条工具返回（role=user + ``【工具返回】``）是否不含错误标记
+      - ``answer``：**最后一条能抽出 ``<answer>``** 的 assistant 文本里的内容。
+        抽不到标签就保持空——不能拿整段文本当答案：截断轨迹（最后一轮是
+        ``<tool_call>`` 或半句话）根本没有答案，写成非空会让格式闸门的
+        "答案非空"退化判据把不合格样本判成合格，恰好绕过 strict 解析要防的场景。
+      - ``n_calls``：``<tool_call>`` 的**出现次数**（一轮并发两个调用要算两次，
+        这样才能和 ``tool_oks`` 的"每次观测一项"对上，``avg_calls``/``call_rate``
+        才不会被低估）
+      - ``tool_oks``：每条工具返回（role=user + ``【工具返回】``）是否不含错误标记，
+        每次观测一项
+      - ``diag_calls_vs_obs``：仅当调用次数与观测条数不一致时出现，说明轨迹里
+        有"调了但没回观测"或"回了多条观测"的轮次，供排查数据质量
     """
     msgs = rec.get("messages")
     if not isinstance(msgs, list):
@@ -120,15 +212,17 @@ def _from_messages(rec: Dict[str, Any]) -> Dict[str, Any]:
             text = str(content or "")
         role = m.get("role")
         if role == "assistant":
-            if "<tool_call>" in text:
-                n_calls += 1
-            ans = _ANSWER_RE.search(text)
-            answer = ans.group(1).strip() if ans else text.strip()
+            n_calls += text.count("<tool_call>")
+            ans = last_nonempty_answer(text)
+            if ans is not None:
+                answer = ans
         elif role == "user" and "【工具返回】" in text:
             oks.append(not obs_is_error(text))
     out: Dict[str, Any] = {"answer": answer, "n_calls": n_calls}
     if oks:
         out["tool_oks"] = oks
+    if len(oks) != n_calls:
+        out["diag_calls_vs_obs"] = {"n_calls": n_calls, "n_obs": len(oks)}
     return out
 
 
@@ -167,21 +261,28 @@ def _strict_answer_ok(rec: Dict[str, Any]) -> Optional[bool]:
 
     输入记录若带原始模型输出 ``raw``（评测产物常见字段），就不该退回到"答案非空"
     这种粗估：答案非空只能证明模型说了话，证明不了它遵守了输出协议。
+
+    取 **最后一个非空** ``<answer>`` 块（见 ``last_nonempty_answer``），与
+    ``eval_gate._strict_answer`` 一致。旧实现用 ``search`` 取第一个，遇到
+    ``<answer></answer><answer>5mm</answer>`` 会判 False，而 eval_gate 判 True。
     """
     r = _flat(rec)
     raw = r.get("raw")
     if not isinstance(raw, str) or not raw.strip():
         return None
-    m = _ANSWER_RE.search(raw)
-    return bool(m and m.group(1).strip())
+    return last_nonempty_answer(raw) is not None
 
 
 def format_valid_report(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """格式合格率及其来源。
 
     判定优先级：``format_ok`` 字段 > 原始 ``raw`` 的严格 ``<answer>`` 解析 > 答案非空。
+    ``format_ok`` 走 ``_flat``（顶层或 ``meta`` 均可），并按 ``parse_bool`` 解析——
+    meta 里的显式 False 不能因为藏在嵌套里就被丢弃，字符串 ``"false"`` 也不能
+    因为 ``bool("false") == True`` 就被读成合格。
 
-    返回 ``{rate, n, n_explicit, n_strict_parsed, n_inferred, degraded, sources}``。
+    返回 ``{rate, n, n_unusable, n_explicit, n_strict_parsed, n_inferred, degraded, sources}``。
+    ``n_unusable`` 是非 dict（无法解析）的行数，它们不计入分母。
     ``degraded=True`` 表示至少有一条记录是靠"答案非空"推断出来的——这类记录绕过了
     真正的格式校验，报告必须暴露它，否则一个没写 format_ok 的评测文件会被读成满分。
     **闸门仍按推断值判定**：直接把缺失当 FAIL 会让所有没有该字段的合法产物全废。
@@ -190,10 +291,17 @@ def format_valid_report(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     n_strict = 0
     n_inferred = 0
     n_ok = 0
+    n_unusable = 0
+    n = 0
     for r in records:
-        if isinstance(r, dict) and r.get("format_ok") is not None:
+        if not isinstance(r, dict):
+            n_unusable += 1
+            continue
+        n += 1
+        explicit = parse_bool(_flat(r).get("format_ok"))
+        if explicit is not None:
             n_explicit += 1
-            ok = bool(r["format_ok"])
+            ok = explicit
         else:
             strict = _strict_answer_ok(r)
             if strict is None:
@@ -203,10 +311,10 @@ def format_valid_report(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
                 n_strict += 1
                 ok = strict
         n_ok += bool(ok)
-    n = len(records)
     return {
         "rate": (n_ok / n) if n else float("nan"),
         "n": n,
+        "n_unusable": n_unusable,
         "n_explicit": n_explicit,
         "n_strict_parsed": n_strict,
         "n_inferred": n_inferred,
@@ -240,21 +348,35 @@ def answer_change_rate(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
       - ``raw_changed`` / ``raw_rate``：原实现的裸字符串比较（strip + casefold），
         保留下来供对照，不作为判定依据。
 
-    返回 ``{n_paired, n_changed, rate, raw_changed, raw_rate}``；没有可配对样本时
-    rate=nan。
+    返回 ``{n_paired, n_changed, rate, raw_changed, raw_rate, n_duplicate, n_bad_lines}``；
+    没有可配对样本时 rate=nan。
+
+    配对 key 是 ``(dataset, id)``：不同数据集的题号各自从 1 开始，只按 id 配对会把
+    dataset=A/id=1 和 dataset=B/id=1 硬凑成一对，凭空造出"答案变了"。同 key 同条件
+    的重复行按 last-write-wins 覆盖，覆盖次数记在 ``n_duplicate`` 里——
+    静默丢样本比报出来更危险。
     """
-    by_id: Dict[str, Dict[str, str]] = {}
+    by_key: Dict[Tuple[str, str], Dict[str, str]] = {}
+    n_duplicate = 0
+    n_bad = 0
     for r in records:
+        if not isinstance(r, dict):
+            n_bad += 1
+            continue
         rid = r.get("id")
         c = _cond(r)
         if rid is None or c not in ("gold_box", "no_tool"):
             continue
-        by_id.setdefault(str(rid), {})[c] = _answer(r)
+        key = (str(_flat(r).get("dataset") or ""), str(rid))
+        slot = by_key.setdefault(key, {})
+        if c in slot:
+            n_duplicate += 1
+        slot[c] = _answer(r)
 
     n_paired = 0
     n_changed = 0
     n_raw_changed = 0
-    for pair in by_id.values():
+    for pair in by_key.values():
         if "gold_box" not in pair or "no_tool" not in pair:
             continue
         n_paired += 1
@@ -270,6 +392,8 @@ def answer_change_rate(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "rate": (n_changed / n_paired) if n_paired else float("nan"),
         "raw_changed": n_raw_changed,
         "raw_rate": (n_raw_changed / n_paired) if n_paired else float("nan"),
+        "n_duplicate": n_duplicate,
+        "n_bad_lines": n_bad,
     }
 
 
@@ -287,7 +411,7 @@ def tool_call_rate(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 
     返回 ``{rate, n, denominator, n_no_tool_excluded, n_conditioned}``。
     """
-    flat = [_flat(r) for r in records]
+    flat = [_flat(r) for r in records if isinstance(r, dict)]
     has_condition = any(f.get("condition") or f.get("view") for f in flat)
     if has_condition:
         judged = [f for f in flat if str(f.get("condition") or f.get("view")
@@ -309,16 +433,21 @@ def tool_call_rate(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def over_call_rate(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """不需要工具的题里，仍然发起调用的比例。needs_tool 缺失的记录不计入分母。"""
-    flat = [_flat(r) for r in records]
+    """不需要工具的题里，仍然发起调用的比例。needs_tool 缺失的记录不计入分母。
+
+    两条分支返回**同一套键**：下游按固定键取值，早退分支少一个
+    ``n_without_needs_tool`` 就会 KeyError。
+    """
+    flat = [_flat(r) for r in records if isinstance(r, dict)]
     judged = [r for r in flat if r.get("needs_tool") is not None]
     neg = [r for r in judged if not r["needs_tool"]]
+    n_without = len(flat) - len(judged)
     if not neg:
         return {"n": 0, "n_called": 0, "rate": float("nan"),
-                "denominator": "needs_tool==False"}
+                "denominator": "needs_tool==False", "n_without_needs_tool": n_without}
     n_called = sum(1 for r in neg if metrics._record_calls(r) > 0)
     return {"n": len(neg), "n_called": n_called, "rate": n_called / len(neg),
-            "denominator": "needs_tool==False", "n_without_needs_tool": len(flat) - len(judged)}
+            "denominator": "needs_tool==False", "n_without_needs_tool": n_without}
 
 
 def _check(name: str, value: float, limit: float, lower_is_bad: bool) -> Dict[str, Any]:
@@ -334,6 +463,12 @@ def evaluate_gate(records: Sequence[Dict[str, Any]], gate: Dict[str, float],
     """跑全部门禁，返回可直接打印/落盘的报告。"""
     g = dict(DEFAULT_GATE)
     g.update({k: float(v) for k, v in (gate or {}).items() if k in DEFAULT_GATE})
+
+    # 入口统一过滤非 dict 行：iter_jsonl 只挡 JSONDecodeError，``null`` / ``[1,2]``
+    # / ``"abc"`` 这类合法 JSON 会原样流进来。坏行数必须进报告，不能静默丢。
+    records, n_bad_lines = _sanitize(records)
+    if baseline is not None:
+        baseline, n_bad_baseline = _sanitize(baseline)
 
     flat = [_flat(r) for r in records]
     eff = metrics.efficiency_report(flat)
@@ -365,7 +500,9 @@ def evaluate_gate(records: Sequence[Dict[str, Any]], gate: Dict[str, float],
     # condition，这两道闸门只能在**评测**产物上算。不区分的话，读训练文件得到的
     # FAIL 会被误读成模型问题。
     has_needs_tool = any(f.get("needs_tool") is not None for f in flat)
-    has_condition = any(f.get("condition") for f in flat)
+    # view 是 condition 的别名：tool_call_rate(/over_call 的 _cond) 都认它，
+    # 这里不认会给只有 view 的文件打出"无 condition 配对"的误导性 note。
+    has_condition = any(f.get("condition") or f.get("view") for f in flat)
     for c in checks:
         if c["gate"] == "tool_call_rate":
             c["denominator"] = cr["denominator"]
@@ -381,14 +518,14 @@ def evaluate_gate(records: Sequence[Dict[str, Any]], gate: Dict[str, float],
 
     report: Dict[str, Any] = {
         "n": len(records),
+        "n_bad_lines": n_bad_lines,
         "checks": checks,
         "passed": all(c["passed"] for c in checks),
         "degraded": bool(fmt_rep["degraded"]),
         "details": {
             "format_valid_rate": fmt,
             "format_valid": fmt_rep,
-            "format_ok_source": ("inferred_from_nonempty" if fmt_rep["degraded"] and not fmt_rep["n_explicit"]
-                                 else ("explicit" if not fmt_rep["degraded"] else "mixed")),
+            "format_ok_source": _format_ok_source(fmt_rep),
             "tool_success_rate": eff["tool_success_rate"],
             "tool_call_rate": cr["rate"],
             "tool_call": cr,
@@ -402,8 +539,11 @@ def evaluate_gate(records: Sequence[Dict[str, Any]], gate: Dict[str, float],
 
     # 与 base 的配对比较：只比两路都有的题，避免拿不同题集自欺
     if baseline:
+        # baseline 已在入口过 _sanitize；这里再 isinstance 兜一次，防止外部直接
+        # 传进非 dict 行（evaluate_gate 是对外 API，不保证调用方都走 iter_jsonl）。
         a = {str(r["id"]): bool(r.get("correct")) for r in baseline
-             if r.get("id") is not None and r.get("correct") is not None}
+             if isinstance(r, dict) and r.get("id") is not None
+             and r.get("correct") is not None}
         b = {str(r["id"]): bool(r.get("correct")) for r in records
              if r.get("id") is not None and r.get("correct") is not None}
         ids = [i for i in b if i in a]
@@ -414,8 +554,31 @@ def evaluate_gate(records: Sequence[Dict[str, Any]], gate: Dict[str, float],
         else:
             report["details"]["vs_baseline"] = {"n_common": 0,
                                                 "note": "无同 id 记录，无法配对比较"}
+        report["details"]["vs_baseline"]["n_bad_lines"] = n_bad_baseline
 
     return report
+
+
+def _format_ok_source(rep: Dict[str, Any]) -> str:
+    """format_ok 的判定来源，四态 + 空集：
+
+      - ``explicit``：全部来自记录自带的 ``format_ok`` 字段；
+      - ``strict``：全部来自 ``raw`` 的严格 ``<answer>`` 解析（**不是** explicit，
+        旧实现会把这一态错标成 explicit）；
+      - ``inferred_from_nonempty``：全部靠"答案非空"推断（degraded）；
+      - ``mixed``：多来源混用；
+      - ``none``：没有可用记录。
+    """
+    used = [n for n in (rep["n_explicit"], rep["n_strict_parsed"], rep["n_inferred"]) if n]
+    if not used:
+        return "none"
+    if len(used) > 1:
+        return "mixed"
+    if rep["n_inferred"]:
+        return "inferred_from_nonempty"
+    if rep["n_strict_parsed"]:
+        return "strict"
+    return "explicit"
 
 
 def _fmt(v: Any) -> str:
@@ -438,12 +601,16 @@ def print_report(r: Dict[str, Any]) -> None:
 
     d = r["details"]
     print(f"\n样本 {r['n']}；平均调用 {_fmt(d['avg_calls'])} 次；平均 token {_fmt(d['avg_tokens'])}")
+    if r.get("n_bad_lines"):
+        print(f"! 跳过无法解析的行 {r['n_bad_lines']} 条（合法 JSON 但不是对象）")
     chg = d["answer_change"]
     if chg["n_paired"]:
         print(f"gold_box vs no_tool 答案变化(归一化): {chg['n_changed']}/{chg['n_paired']}"
               f"；原始字符串比较: {chg['raw_changed']}/{chg['n_paired']}")
     else:
         print("gold_box vs no_tool 未配对（该项按 FAIL 处理）")
+    if chg.get("n_duplicate"):
+        print(f"! 同 (dataset, id, condition) 重复行 {chg['n_duplicate']} 条（后者覆盖前者）")
 
     tc = d.get("tool_call")
     if tc:

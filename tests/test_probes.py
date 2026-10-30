@@ -186,7 +186,9 @@ def test_build_probe_request_shape(cfg, images, n_calls):
         req = P.build_probe_request(traj, sample, k, cfg)
         assert req["custom_id"] == P.probe_custom_id(traj.id, k)
         params = req["params"]
-        assert params["max_tokens"] == P.PROBE_MAX_TOKENS == 64
+        # 上限来自 cfg.rl.probe.max_tokens（default.yaml = 32），不再是写死的 64
+        assert P.PROBE_MAX_TOKENS == 32
+        assert params["max_tokens"] == P.probe_max_tokens(cfg) == 32
         # 禁止 prefill：只有一条 user 消息
         assert len(params["messages"]) == 1
         assert params["messages"][0]["role"] == "user"
@@ -212,14 +214,97 @@ def test_build_probe_request_rejects_k_equals_n_calls(cfg, images):
         P.build_probe_request(traj, sample, 2, cfg)  # a_K 复用 final_answer，不发请求
 
 
+# ---------------------------------------------------------------- max_tokens
+
+
+def test_probe_max_tokens_reads_cfg_and_clamps_to_32(images):
+    """64 是写死的旧值；正确口径是读 ``rl.probe.max_tokens`` 且钳在 §7.1 的 32。"""
+    sample = _make_sample(images)
+    traj = _make_traj(1, images)
+
+    def _mt(cfg_obj):
+        return P.build_probe_request(traj, sample, 0, cfg_obj)["params"]["max_tokens"]
+
+    # 配置缺省 -> 32
+    assert P.probe_max_tokens(None) == 32
+    assert P.probe_max_tokens({}) == 32
+    # 显式小值原样生效
+    assert _mt({"rl": {"probe": {"max_tokens": 8}}}) == 8
+    assert _mt({"probe": {"max_tokens": 16}}) == 16
+    # 超过 32 一律钳到 32，并 warn（探针长度上限是 PROPOSAL 硬约束）
+    with pytest.warns(RuntimeWarning):
+        assert _mt({"rl": {"probe": {"max_tokens": 128}}}) == 32
+    assert P.probe_max_tokens({"rl": {"probe": {"max_tokens": 999}}}) == 32
+    # 非法值回落 32，不抛
+    with pytest.warns(RuntimeWarning):
+        assert P.probe_max_tokens({"rl": {"probe": {"max_tokens": "abc"}}}) == 32
+    with pytest.warns(RuntimeWarning):
+        assert P.probe_max_tokens({"rl": {"probe": {"max_tokens": 0}}}) == 32
+
+
+def test_effective_max_tokens_is_recorded_in_meta(cfg, images):
+    """探针 meta 要记真正生效的 max_tokens，便于复盘是否被长度上限截断。"""
+    sample = _make_sample(images)
+    traj = _make_traj(1, images, tid="traj-mt")
+    client = FakeBatchClient(lambda _cid: "yes")
+    P.collect_probes([traj], [sample], cfg, client,
+                     sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+    assert traj.meta["probe_max_tokens"] == P.probe_max_tokens(cfg) == 32
+    assert client.requests[0]["params"]["max_tokens"] == 32
+
+
 def test_prefix_images_skips_empty_and_does_not_leak_later_calls(cfg, images):
     """第 1 次调用没有返回图时，a_1 不能拿第 2 次的图来凑。"""
     sample = _make_sample(images)
     traj = _make_traj(2, images)
-    traj.steps[0].result = ToolResult(ok=True, image=None, text="12.3 mm")  # measure 类
+    # measure 类调用只回数值、没有返回图（非 crop/zoom，sanitize 也不会给它补图）
+    traj.steps[0].call = ToolCall(name="measure", args={"x0": 5.0, "y0": 5.0, "x1": 40.0, "y1": 40.0})
+    traj.steps[0].result = ToolResult(ok=True, image=None, text="12.3 mm")
     P.build_probe_request(traj, sample, 1, cfg)
     assert P._prefix_images(traj, 1) == []
     assert len(P._prefix_images(traj, 2)) == 1
+
+
+def test_measure_turn_before_crop_keeps_instruction_in_sync(cfg, images):
+    """[measure, crop] 的轨迹：图片编号必须与实际附件一一对应，文本观测不能丢。
+
+    修前行为：指令按 k 生成（"IMAGE 2 = CROP_1 (returned by tool call 1)"），
+    而附件按"返回了图的工具轮"生成——k=1 时只有原图、却宣称有第二张图，
+    且 MEASURE_RESULT 这样的文本观测根本不进提示词。
+    """
+    sample = _make_sample(images)
+    traj = _make_traj(1, images)
+    traj.steps[0].call = ToolCall(name="measure", args={"x0": 5.0, "y0": 5.0, "x1": 40.0, "y1": 40.0})
+    # [measure, crop, crop]
+    traj = _make_traj(3, images)
+    traj.steps[0].call = ToolCall(name="measure", args={"x0": 5.0, "y0": 5.0, "x1": 40.0, "y1": 40.0})
+    traj.steps[0].result = ToolResult(ok=True, image=None, text="12.3 mm")
+    traj.steps[1].call = ToolCall(name="crop", args={"x0": 5.0, "y0": 5.0, "x1": 40.0, "y1": 40.0})
+    traj.steps[1].result = ToolResult(ok=True, image="CROP_1", text="")
+    traj.steps[2].call = ToolCall(name="crop", args={"x0": 10.0, "y0": 10.0, "x1": 30.0, "y1": 30.0})
+    traj.steps[2].result = ToolResult(ok=True, image="CROP_2", text="")
+
+    # k=1：只执行了 measure，只有原图
+    req = P.build_probe_request(traj, sample, 1, cfg)
+    blocks = req["params"]["messages"][0]["content"]
+    assert len([b for b in blocks if b["type"] == "image"]) == 1
+    text = blocks[-1]["text"]
+    assert "IMAGE 2" not in text                      # 没有第二张图，就不能宣称有
+    assert "CROP_1" not in text
+    assert "12.3 mm" in text                          # measure 的文本观测必须进提示词
+    assert "tool call 1 (measure)" in text
+    assert "ORIGINAL image only" in text              # 附件描述与实际一致
+
+    # k=2：measure + crop，附件 = 原图 + 1 张；编号必须指向第 2 次调用
+    req2 = P.build_probe_request(traj, sample, 2, cfg)
+    blocks2 = req2["params"]["messages"][0]["content"]
+    imgs2 = [b for b in blocks2 if b["type"] == "image"]
+    text2 = blocks2[-1]["text"]
+    assert len(imgs2) == 2
+    assert "IMAGE 2 = return image of tool call 2 (crop)" in text2
+    assert "12.3 mm" in text2
+    # 实际附件数与指令里的图片数一致（这正是缺陷 3 的核心）
+    assert "IMAGE 3" not in text2
 
 
 # ---------------------------------------------------------------- 主流程
@@ -235,6 +320,7 @@ def test_collect_probes_end_to_end(cfg, images, n_calls):
                            sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
 
     K = n_calls
+    # 硬不变量：探针数 = K+1（K=0 时只有 a_0，由 final_answer 判分得到）
     assert len(traj.probes) == K + 1
     assert [p.k for p in traj.probes] == list(range(K + 1))
     assert len(traj.delta_k) == K
@@ -244,15 +330,16 @@ def test_collect_probes_end_to_end(cfg, images, n_calls):
     assert traj.meta["probe_source"] == "recollected"
     assert all(p.score in (-1, 0, 1) for p in traj.probes)
 
-    # a_0 = "no"（错），a_k(k>=1) 与 a_K 都是 "yes"（对）
-    assert traj.probes[0].score == 0
-    assert traj.probes[1].score == 1
-    if K == 0:
-        # K=0 时 a_1 复用 final_answer，且只发了一条请求
-        assert traj.probes[1].answer == traj.final_answer
-        assert len(client.requests) == 1
-    else:
+    # a_0 = "no"（错）；k>=1 与 a_K 都是 "yes"（对）
+    if K >= 1:
+        assert traj.probes[0].score == 0
+        assert traj.probes[1].score == 1
         assert traj.probes[-1].answer == traj.final_answer
+    else:
+        # K=0：a_0 就是 final_answer 本身（"yes" → 1）
+        assert traj.probes[0].answer == traj.final_answer
+        assert traj.probes[0].score == 1
+        assert traj.delta_total == 0
 
     # 实际发出的请求数 = K，custom_id 唯一，图片数 = k+1
     assert len(client.requests) == K
@@ -264,7 +351,8 @@ def test_collect_probes_end_to_end(cfg, images, n_calls):
 
     # ogar_masks 的硬不变量必须满足（不抛异常且掩码长度正确）
     res = ogar_masks([p.score for p in traj.probes], _segments(K))
-    assert res.token_mask and len(res.call_indices) == K
+    assert len(res.token_mask) > 0
+    assert len(res.call_indices) == K
     ok, errs = validate_probes(traj)
     assert ok, errs
 
@@ -318,11 +406,11 @@ def test_existing_ids_can_carry_answers(cfg, images):
 def test_collect_probes_records_failures_and_retries(cfg, images):
     sample = _make_sample(images)
     traj = _make_traj(2, images)
-    calls = {"n": 0}
+    failed: set = set()
 
     def flaky(cid: str) -> Optional[str]:
-        calls["n"] += 1
-        if _k_of(cid) == 1 and calls["n"] == 1:
+        if _k_of(cid) == 1 and cid not in failed:
+            failed.add(cid)
             return None  # 第一次失败，第二轮重试成功
         return _answer_by_k(cid)
 
@@ -331,8 +419,10 @@ def test_collect_probes_records_failures_and_retries(cfg, images):
     out = P.collect_probes([traj], [sample], cfg, client, failure_sink=sink,
                            sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
     assert out["n_completed"] == 1
+    assert out["n_failed"] == 0  # 重试成功后不再记失败
     assert len(traj.probes) == 3
-    assert calls["n"] >= 3  # 失败的那条被重新提交过
+    assert failed  # 的确有一条被重试过
+    assert len(client.requests) == 3  # 2 条正常 + 1 条重试
 
 
 def test_collect_probes_failure_keeps_pending(cfg, images):
@@ -379,9 +469,150 @@ def test_out_path_writes_and_resumes(cfg, images, tmp_path):
         assert len([x for x in f if x.strip()]) == 1
 
 
+def test_out_path_overwrites_incomplete_same_id_row(cfg, images, tmp_path):
+    """文件里已有同 id **但不完整**的旧行时，新结果必须真的落到磁盘上。
+
+    修前行为：``collect_probes`` 用 ``utils/io.JsonlWriter`` 落盘，而它按 id 去重，
+    撞到已见 id 时静默返回 False——``_finalize`` 在内存里修好了，磁盘上那条
+    老口径（K=0、只有 2 个探针）的旧行却永远不变，``n_completed`` 还报告成功。
+    """
+    sample = _make_sample(images)
+    out_path = str(tmp_path / "probes.jsonl")
+    traj = _make_traj(2, images, tid="traj-dup")
+
+    # 手工造一条同 id 的旧行：老口径，probes 只有 2 条、delta_k 缺项、待采
+    stale = _make_traj(2, images, tid="traj-dup", final_answer="")
+    stale.probes = [Probe(k=0, answer="stale", score=0, parse_ok=True),
+                    Probe(k=1, answer="stale", score=0, parse_ok=True)]
+    stale.delta_k = []
+    stale.delta_total = 0
+    stale.meta = {"probes_pending": True, "n_calls": 2}
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "traj-dup", "traj": stale.to_json(),
+                            "probes": [p.to_json() for p in stale.probes],
+                            "delta_k": [], "delta_total": 0}, ensure_ascii=False) + "\n")
+
+    client = FakeBatchClient(_answer_by_k)
+    out = P.collect_probes([traj], [sample], cfg, client, out_path=out_path,
+                           sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+    assert out["n_completed"] == 1
+    assert out["n_adopted"] == 0          # 旧行不完整，不能被采纳
+
+    with open(out_path, "r", encoding="utf-8") as f:
+        lines = [json.loads(x) for x in f if x.strip()]
+    # 同 id 只剩最后一行（压缩过），且内容是新结果而不是旧行
+    assert len(lines) == 1
+    rec = lines[0]
+    assert rec["id"] == "traj-dup"
+    assert len(rec["probes"]) == 3 and len(rec["delta_k"]) == 2
+    assert rec["traj"]["meta"]["probes_pending"] is False
+    assert [p["score"] for p in rec["probes"]] == [p.score for p in traj.probes]
+    assert rec["probe_meta"]["probe_max_tokens"] == 32
+
+    # 再续跑一次：这次应当能采纳磁盘结果，且不产生第二行
+    fresh = _make_traj(2, images, tid="traj-dup")
+    empty = FakeBatchClient(lambda _cid: None)
+    out2 = P.collect_probes([fresh], [sample], cfg, empty, out_path=out_path,
+                            sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+    assert out2["n_requests"] == 0 and out2["n_adopted"] == 1
+    assert [p.score for p in fresh.probes] == [p.score for p in traj.probes]
+    with open(out_path, "r", encoding="utf-8") as f:
+        assert len([x for x in f if x.strip()]) == 1
+
+
+# ---------------------------------------------------------------- 完成度判定
+
+
+def test_missing_probes_pending_key_is_not_complete(images):
+    """K=0 且 meta 为空（键缺失）时不能判成"已完成"，否则占位会被冻结成 a_0。"""
+    traj = _make_traj(0, images, tid="t-nokey")
+    traj.meta = {}
+    traj.probes = [Probe(k=0, answer="placeholder", score=0, parse_ok=True)]
+    traj.delta_k = []
+    assert P.probes_complete(traj) is False
+
+
+def test_probe_source_is_required_for_completion(images):
+    """缺 ``probe_source`` 的探针无法区分"重采过"与"教师自述"，一律算未完成。"""
+    traj = _make_traj(1, images, tid="t-nosrc")
+    traj.probes = [Probe(k=0, answer="no", score=0), Probe(k=1, answer="yes", score=1)]
+    traj.delta_k = [1]
+    traj.meta = {"probes_pending": False}
+    assert P.probes_complete(traj) is False
+    traj.meta["probe_source"] = "recollected"
+    assert P.probes_complete(traj) is True
+
+
+def test_adopt_copies_all_probe_meta_keys(cfg, images, tmp_path):
+    """采纳与写入必须搬同一份 meta 字段集，否则内存重采与磁盘采纳产出不可复现。"""
+    sample = _make_sample(images)
+    out_path = str(tmp_path / "probes.jsonl")
+    src = _make_traj(1, images, tid="traj-meta", final_answer="")
+    client = FakeBatchClient(lambda _cid: "")
+    P.collect_probes([src], [sample], cfg, client, out_path=out_path,
+                     sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+    written = {k: src.meta[k] for k in P.PROBE_META_KEYS if k in src.meta}
+    # 采完的轨迹一定带上这些字段（probe_skip_reason 只属于"跳过"状态，这不算）
+    assert {"probes_pending", "probe_source", "probe_model",
+            "probe_max_tokens", "probe_empty_ks"} <= set(written)
+    with open(out_path, "r", encoding="utf-8") as f:
+        rec = json.loads(f.readline())
+    assert rec["probe_meta"] == written
+
+    dst = _make_traj(1, images, tid="traj-meta")
+    adopted = P.collect_probes([dst], [sample], cfg, FakeBatchClient(lambda _c: None),
+                               out_path=out_path,
+                               sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+    assert adopted["n_adopted"] == 1
+    for key in written:
+        assert dst.meta.get(key) == written[key], key
+
+
+def test_duplicate_traj_ids_do_not_submit_duplicate_custom_ids(cfg, images):
+    """两条轨迹撞同一个 id 时，绝不能提交重复 custom_id（Batch API 会整批拒收）。"""
+    sample = _make_sample(images)
+    a = _make_traj(1, images, tid="dup", final_answer="yes")
+    b = _make_traj(1, images, tid="dup", final_answer="yes")
+    client = FakeBatchClient(_answer_by_k)
+    sink: List[Dict[str, Any]] = []
+    out = P.collect_probes([a, b], [sample], cfg, client, failure_sink=sink,
+                           sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+
+    cids = [r["custom_id"] for r in client.requests]
+    assert len(cids) == len(set(cids)) == 1        # 只发一条，没有重复
+    assert out["n_completed"] == 1
+    assert out["n_incomplete"] == 1
+    dup = [s for s in sink if s["stage"] == "duplicate_id"]
+    assert len(dup) == 1 and dup[0]["traj_id"] == "dup"
+    # 后到的那条保持待采，不被错误地判成完成
+    assert b.meta["probes_pending"] is True
+    assert a.meta["probes_pending"] is False
+
+
+def test_same_traj_object_twice_does_not_resubmit(cfg, images):
+    """同一个 Trajectory 对象在列表里出现两次时，第二次不能再发一遍请求。
+
+    与上一条的区别：这里撞车的是**同一个对象**，owner == id(traj)，
+    只用 custom_id 判重会被『是自己』绕过（缺陷 9）。去重要按 (cid, id(traj)) 做。
+    """
+    sample = _make_sample(images)
+    a = _make_traj(2, images, tid="same", final_answer="yes")
+    client = FakeBatchClient(_answer_by_k)
+    sink: List[Dict[str, Any]] = []
+    out = P.collect_probes([a, a], [sample], cfg, client, failure_sink=sink,
+                           sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+
+    cids = [r["custom_id"] for r in client.requests]
+    assert cids == [P.probe_custom_id("same", 0),
+                    P.probe_custom_id("same", 1)]   # 每个 k 只发一次
+    assert out["n_completed"] == 1
+    assert out["n_incomplete"] == 0                # 没有多余副本需要待采
+    assert a.meta["probes_pending"] is False
+    # 重复出现不算 id 撞车，不该被报成 duplicate_id
+    assert not [s for s in sink if s["stage"] == "duplicate_id"]
+
+
 # ---------------------------------------------------------------- 待采清单
-
-
 def test_pending_probe_keys(cfg, images):
     sample = _make_sample(images)
     trajs = [
@@ -390,8 +621,9 @@ def test_pending_probe_keys(cfg, images):
         _make_traj(1, images, tid="t2"),
     ]
     keys = P.pending_probe_keys(trajs, [sample], cfg)
-    assert keys == [("t0", "MS-CXR/0001", 0), ("t1", "MS-CXR/0001", 0),
-                    ("t1", "MS-CXR/0001", 1), ("t2", "MS-CXR/0001", 0)]
+    # K=0 的 t0 不发请求（a_0 = final_answer），K>=1 的发 0..K-1
+    assert keys == [("t1", "MS-CXR/0001", 0), ("t1", "MS-CXR/0001", 1),
+                    ("t2", "MS-CXR/0001", 0)]
 
     # 采完之后清单里不再出现
     client = FakeBatchClient(_answer_by_k)
@@ -408,22 +640,42 @@ def test_pending_probe_keys_skips_trajs_without_sample(cfg, images):
 # ---------------------------------------------------------------- 判分口径
 
 
-def test_unparsable_probe_scores_minus_one(cfg, images):
-    """空答案不丢弃，由 grader 自然判 -1；K+1 的不变量仍然成立。"""
+def test_empty_probe_answers_score_zero_and_are_not_in_delta(cfg, images):
+    """空/纯空白答案 = 解析失败：记 0 且不进 Δ（PROPOSAL §7.1），绝不记 -1。
+
+    修前行为：空串被 grader 判成 ``empty_pred -> -1``，再配上一条答对的 a_K
+    就造出 ``delta_k=[2]`` 的极端 Δ。修法是 ``parse_ok=False`` + score 0，
+    并让 ``advantage.validate_probes`` 的 ``parse_ok`` 检查真正可达。
+    """
     sample = _make_sample(images)
     traj = _make_traj(1, images, final_answer="")  # 最终答案也为空
     client = FakeBatchClient(lambda _cid: "")
     P.collect_probes([traj], [sample], cfg, client,
                      sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
-    assert [p.score for p in traj.probes] == [-1, -1]
-    assert traj.delta_k == [0]
+    assert [p.score for p in traj.probes] == [0, 0]
+    assert [p.parse_ok for p in traj.probes] == [False, False]
+    assert traj.delta_k == [0]          # 解析失败不进 Δ
+    assert traj.delta_total == 0
     assert traj.meta["probe_empty_ks"] == [0, 1]
+    # 解析失败的探针必须被 validate_probes 拦下，而不是伪造 parse_ok=True 放行
     ok, errs = validate_probes(traj)
-    assert ok, errs
+    assert not ok and any("parse" in str(e).lower() for e in errs), errs
+
+
+def test_blank_but_nonempty_answer_is_parse_failure(cfg, images):
+    """纯空白 / "n/a" 这类"没答"同样是解析失败，不是答错。"""
+    sample = _make_sample(images)
+    traj = _make_traj(1, images, final_answer="   \n\t ")
+    client = FakeBatchClient(lambda _cid: "  ")
+    P.collect_probes([traj], [sample], cfg, client,
+                     sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
+    assert [p.score for p in traj.probes] == [0, 0]
+    assert [p.parse_ok for p in traj.probes] == [False, False]
+    assert traj.meta["probe_empty_ks"] == [0, 1]
 
 
 def test_long_samples_are_not_gradable(cfg, images):
-    """long 题型 grader 恒返回 0（不可判），重采不应抛异常。"""
+    """long 题型进不了 Δ 通道：不发请求、不写 probes_pending=False，单列计数。"""
     sample = _make_sample(images)
     sample.answer_type = "long"
     sample.answer = "focal opacity with well-defined borders"
@@ -431,8 +683,15 @@ def test_long_samples_are_not_gradable(cfg, images):
     client = FakeBatchClient(lambda _cid: "focal opacity")
     out = P.collect_probes([traj], [sample], cfg, client,
                            sleep_fn=lambda _s: None, now_fn=lambda: 0.0)
-    assert out["n_completed"] == 1
-    assert [p.score for p in traj.probes] == [0, 0]
+    assert out["n_requests"] == 0 and client.requests == []
+    assert out["n_completed"] == 0
+    assert out["n_not_gradable"] == 1
+    assert out["not_gradable_ids"] == [traj.id]
+    # 不清洗：仍然是待采的教师占位，不会被当成可用轨迹
+    assert traj.meta["probes_pending"] is True
+    assert traj.meta["probe_skip_reason"] == "not_gradable"
+    assert "probe_source" not in traj.meta
+    assert traj.probes == [Probe(k=0, answer="placeholder", score=0, parse_ok=True)]
 
 
 def test_grader_instance_is_used_for_scoring(cfg, images):
