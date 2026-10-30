@@ -1,0 +1,30 @@
+# ---- 体积：不进 Git ----
+# 66G 训练检查点
+data/ckpt/
+# 原始图像（ChestX-ray14 880 张、VinDr 1063 张等）
+data/raw/
+# 预处理/裁剪产物图
+data/processed/
+# 50 步冒烟检查点
+data/ckpt_smoke/
+
+# ---- 可再生的中间产物 ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- 本地临时/日志 ----
+*.log
+*.log.*
+*.tmp
+fill.log*
+nohup.out
+data/questions/*.bak
+
+# ---- 权重（若有人把模型放进来）----
+*.safetensors
+*.pt
+*.pth
+*.bin

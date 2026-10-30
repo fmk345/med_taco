@@ -1,0 +1,115 @@
+{"custom_id": "traj-chestx_ray14:53c06cd3bd359f11#G3-zh-02", "sample_id": "chestx_ray14:53c06cd3bd359f11#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:b29cefdfd57ee92a#G2-en-06", "sample_id": "chestx_ray14:b29cefdfd57ee92a#G2-en-06", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:2965a069b89c8893#G3-en-02", "sample_id": "chestx_ray14:2965a069b89c8893#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:1a6db109111b8f5c#G3-zh-02", "sample_id": "chestx_ray14:1a6db109111b8f5c#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:399ace72d0384650#G3-en-02", "sample_id": "chestx_ray14:399ace72d0384650#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:240bee48521cd1b9#G3-en-02", "sample_id": "chestx_ray14:240bee48521cd1b9#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:1fc37d0e76219282#G3-zh-02", "sample_id": "chestx_ray14:1fc37d0e76219282#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f23ec85732f3ab0c#G1-en-01", "sample_id": "chestx_ray14:f23ec85732f3ab0c#G1-en-01", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 2"}
+{"custom_id": "traj-chestx_ray14:28cb4d93170e947a#G3-en-02", "sample_id": "chestx_ray14:28cb4d93170e947a#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:545dd660ed02da1c#G1-zh-04", "sample_id": "chestx_ray14:545dd660ed02da1c#G1-zh-04", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:127a04cf6cd58342#G1-en-01", "sample_id": "chestx_ray14:127a04cf6cd58342#G1-en-01", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:6c1fe40f915c1482#G3-en-02", "sample_id": "chestx_ray14:6c1fe40f915c1482#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:cb0e46c1c66d1ae2#G5-en-05", "sample_id": "chestx_ray14:cb0e46c1c66d1ae2#G5-en-05", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:60445a1aa9fb17af#G3-zh-02", "sample_id": "chestx_ray14:60445a1aa9fb17af#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:e1b387dd7674c44e#G3-zh-02", "sample_id": "chestx_ray14:e1b387dd7674c44e#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:74b34794faf30409#G3-en-02", "sample_id": "chestx_ray14:74b34794faf30409#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:d22e42147139a4f1#G3-en-02", "sample_id": "chestx_ray14:d22e42147139a4f1#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:73558a7a338a1141#G3-en-03", "sample_id": "chestx_ray14:73558a7a338a1141#G3-en-03", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:278dab4b425bbd54#G3-en-02", "sample_id": "chestx_ray14:278dab4b425bbd54#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:cdd5f540c88112b5#G3-en-02", "sample_id": "chestx_ray14:cdd5f540c88112b5#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:bc32eb75494aa1a3#G3-zh-02", "sample_id": "chestx_ray14:bc32eb75494aa1a3#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:b033d5ad1740f1a0#G1-en-07", "sample_id": "chestx_ray14:b033d5ad1740f1a0#G1-en-07", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:ed8a012052eaa499#G3-en-02", "sample_id": "chestx_ray14:ed8a012052eaa499#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:57823738bd567e04#G3-en-02", "sample_id": "chestx_ray14:57823738bd567e04#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:31f4ce141e310f02#G3-en-02", "sample_id": "chestx_ray14:31f4ce141e310f02#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:d637201cc999a391#G3-en-02", "sample_id": "chestx_ray14:d637201cc999a391#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:10641120680a43d6#G3-en-02", "sample_id": "chestx_ray14:10641120680a43d6#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:7e8a4eaca12702fa#G3-en-02", "sample_id": "chestx_ray14:7e8a4eaca12702fa#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:5211c122626a47f3#G3-en-02", "sample_id": "chestx_ray14:5211c122626a47f3#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:0b9c478d21344e6a#G3-en-02", "sample_id": "chestx_ray14:0b9c478d21344e6a#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:767dc7f3958d0ade#G1-zh-06", "sample_id": "chestx_ray14:767dc7f3958d0ade#G1-zh-06", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:13a6f3ffeb3bdace#G3-en-02", "sample_id": "chestx_ray14:13a6f3ffeb3bdace#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:b9150509ce4b5812#G3-zh-02", "sample_id": "chestx_ray14:b9150509ce4b5812#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:00981ce9c266f22f#G3-en-02", "sample_id": "chestx_ray14:00981ce9c266f22f#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:999c69db9b848666#G5-zh-03", "sample_id": "chestx_ray14:999c69db9b848666#G5-zh-03", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:e5617d01f23fc798#G2-zh-06", "sample_id": "chestx_ray14:e5617d01f23fc798#G2-zh-06", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:11973f1a73583dd0#G3-en-02", "sample_id": "chestx_ray14:11973f1a73583dd0#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:6642c26a66efbba8#G3-en-02", "sample_id": "chestx_ray14:6642c26a66efbba8#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:fa21d4755d2a31a3#G3-en-02", "sample_id": "chestx_ray14:fa21d4755d2a31a3#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:0b57015a4b15d3b6#G3-en-02", "sample_id": "chestx_ray14:0b57015a4b15d3b6#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:a83faa0d65bd7c96#G3-zh-02", "sample_id": "chestx_ray14:a83faa0d65bd7c96#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:7068d3aabb8c1ab4#G3-en-02", "sample_id": "chestx_ray14:7068d3aabb8c1ab4#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:4d59f7ac19801885#G3-en-02", "sample_id": "chestx_ray14:4d59f7ac19801885#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:9876526841412857#G3-zh-02", "sample_id": "chestx_ray14:9876526841412857#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:76459ddd4e97abfb#G1-en-04", "sample_id": "chestx_ray14:76459ddd4e97abfb#G1-en-04", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:cb0e46c1c66d1ae2#G3-en-02", "sample_id": "chestx_ray14:cb0e46c1c66d1ae2#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:d5f5c7cb68e37a75#G3-en-02", "sample_id": "chestx_ray14:d5f5c7cb68e37a75#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:572f32f43ce0bac6#G3-en-02", "sample_id": "chestx_ray14:572f32f43ce0bac6#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:6af45fce751c6dec#G3-en-02", "sample_id": "chestx_ray14:6af45fce751c6dec#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:fb8273c6a2a65f5a#G1-zh-10", "sample_id": "chestx_ray14:fb8273c6a2a65f5a#G1-zh-10", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:471b828715458724#G5-zh-07", "sample_id": "chestx_ray14:471b828715458724#G5-zh-07", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 2"}
+{"custom_id": "traj-chestx_ray14:7a2f34d9c871986b#G3-en-02", "sample_id": "chestx_ray14:7a2f34d9c871986b#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f6240182a8675fc4#G3-en-02", "sample_id": "chestx_ray14:f6240182a8675fc4#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:fd872436c401c0c3#G1-zh-06", "sample_id": "chestx_ray14:fd872436c401c0c3#G1-zh-06", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 2"}
+{"custom_id": "traj-chestx_ray14:2bd16ea3e1f6bda5#G1-en-06", "sample_id": "chestx_ray14:2bd16ea3e1f6bda5#G1-en-06", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:b1e5cd5dd68c6b3d#G3-en-02", "sample_id": "chestx_ray14:b1e5cd5dd68c6b3d#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:657818b66be3f0d2#G2-en-02", "sample_id": "chestx_ray14:657818b66be3f0d2#G2-en-02", "stage": "parse", "error": "TeacherError: zoom 必须给框"}
+{"custom_id": "traj-chestx_ray14:d5f79a606b097321#G3-zh-02", "sample_id": "chestx_ray14:d5f79a606b097321#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:5e9a90e741e1ac67#G3-zh-02", "sample_id": "chestx_ray14:5e9a90e741e1ac67#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f8b37a5db0b4c2c7#G1-zh-04", "sample_id": "chestx_ray14:f8b37a5db0b4c2c7#G1-zh-04", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:c712fcfa0bf6a65b#G3-en-02", "sample_id": "chestx_ray14:c712fcfa0bf6a65b#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:b6b541ea20b86b82#G1-zh-08", "sample_id": "chestx_ray14:b6b541ea20b86b82#G1-zh-08", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:852c817c99dcb75e#G3-en-02", "sample_id": "chestx_ray14:852c817c99dcb75e#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:5bc7f92e93627d98#G3-zh-02", "sample_id": "chestx_ray14:5bc7f92e93627d98#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:75bfa82da99128f8#G2-zh-06", "sample_id": "chestx_ray14:75bfa82da99128f8#G2-zh-06", "stage": "parse", "error": "TeacherError: 结构化输出不是合法 JSON: Unterminated string starting at: line 5 column 18 (char 89); 前 200 字: {\n  \"probe_no_tool\": {\n    \"answer\": \"central\",\n    \"confidence\": 0.95,\n    \"rationale\": \"The original image shows a clear pneumothorax on the right side with a visible lung edge and a significant are"}
+{"custom_id": "traj-chestx_ray14:b033d5ad1740f1a0#G3-en-02", "sample_id": "chestx_ray14:b033d5ad1740f1a0#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:d68ec517c57e1141#G3-en-02", "sample_id": "chestx_ray14:d68ec517c57e1141#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:088b778e5f7bfd60#G3-en-02", "sample_id": "chestx_ray14:088b778e5f7bfd60#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:30e70633ef971baf#G3-zh-02", "sample_id": "chestx_ray14:30e70633ef971baf#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:55c90c0eee9da929#G2-zh-06", "sample_id": "chestx_ray14:55c90c0eee9da929#G2-zh-06", "stage": "parse", "error": "TeacherError: zoom 必须给框"}
+{"custom_id": "traj-chestx_ray14:b28413b331ed3881#G3-en-02", "sample_id": "chestx_ray14:b28413b331ed3881#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:9294b784247abbba#G3-en-02", "sample_id": "chestx_ray14:9294b784247abbba#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:23876b71b298f370#G1-en-09", "sample_id": "chestx_ray14:23876b71b298f370#G1-en-09", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:1d4333fb8bb6ce94#G3-en-02", "sample_id": "chestx_ray14:1d4333fb8bb6ce94#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:d2ae7eaefb895b66#G3-en-02", "sample_id": "chestx_ray14:d2ae7eaefb895b66#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:c5f283cf7bcd3e21#G3-en-03", "sample_id": "chestx_ray14:c5f283cf7bcd3e21#G3-en-03", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:0199e95c1adbbdee#G3-en-02", "sample_id": "chestx_ray14:0199e95c1adbbdee#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:62b9c11c52f83efd#G3-en-02", "sample_id": "chestx_ray14:62b9c11c52f83efd#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:657818b66be3f0d2#G3-en-02", "sample_id": "chestx_ray14:657818b66be3f0d2#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:300f3f998db08d09#G2-zh-06", "sample_id": "chestx_ray14:300f3f998db08d09#G2-zh-06", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f062bfe778008ebe#G5-en-07", "sample_id": "chestx_ray14:f062bfe778008ebe#G5-en-07", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 2"}
+{"custom_id": "traj-chestx_ray14:d319d7c4bf270926#G3-zh-03", "sample_id": "chestx_ray14:d319d7c4bf270926#G3-zh-03", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:c099ee0fb9c1a5bf#G3-en-02", "sample_id": "chestx_ray14:c099ee0fb9c1a5bf#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f7ddecbc73df0f34#G3-en-09", "sample_id": "chestx_ray14:f7ddecbc73df0f34#G3-en-09", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:d7678ad5ce0146f1#G3-zh-02", "sample_id": "chestx_ray14:d7678ad5ce0146f1#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:e28954774991d8ef#G3-zh-02", "sample_id": "chestx_ray14:e28954774991d8ef#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f44daf315ae86950#G3-en-02", "sample_id": "chestx_ray14:f44daf315ae86950#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:1eb3f78628f36ce2#G3-en-01", "sample_id": "chestx_ray14:1eb3f78628f36ce2#G3-en-01", "stage": "parse", "error": "TeacherError: zoom 必须给框"}
+{"custom_id": "traj-chestx_ray14:068944b3d204ccb7#G3-en-02", "sample_id": "chestx_ray14:068944b3d204ccb7#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:4d59f7ac19801885#G1-zh-08", "sample_id": "chestx_ray14:4d59f7ac19801885#G1-zh-08", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:216587e9e6cfe564#G1-zh-01", "sample_id": "chestx_ray14:216587e9e6cfe564#G1-zh-01", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:3066a54c653c17d9#G2-en-03", "sample_id": "chestx_ray14:3066a54c653c17d9#G2-en-03", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:545dd660ed02da1c#G1-zh-08", "sample_id": "chestx_ray14:545dd660ed02da1c#G1-zh-08", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:f2ca15557d8009a8#G3-en-02", "sample_id": "chestx_ray14:f2ca15557d8009a8#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:1a686a56fb2d65d9#G3-zh-02", "sample_id": "chestx_ray14:1a686a56fb2d65d9#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:5a13159465c18b7f#G3-zh-02", "sample_id": "chestx_ray14:5a13159465c18b7f#G3-zh-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:f8a436e86a5def55#G3-en-02", "sample_id": "chestx_ray14:f8a436e86a5def55#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:094617efd09ccf28#G3-en-02", "sample_id": "chestx_ray14:094617efd09ccf28#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:e29b6776b263497d#G3-en-02", "sample_id": "chestx_ray14:e29b6776b263497d#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:ef516dde17a54451#G3-en-02", "sample_id": "chestx_ray14:ef516dde17a54451#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:5fde347673387a44#G3-en-02", "sample_id": "chestx_ray14:5fde347673387a44#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:3d47a2aa4844dbb5#G3-en-02", "sample_id": "chestx_ray14:3d47a2aa4844dbb5#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:980a29ccf50f7683#G3-en-02", "sample_id": "chestx_ray14:980a29ccf50f7683#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:3d4278081ffdfd8e#G5-en-07", "sample_id": "chestx_ray14:3d4278081ffdfd8e#G5-en-07", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 2"}
+{"custom_id": "traj-chestx_ray14:f8b1a268b7936486#G3-en-02", "sample_id": "chestx_ray14:f8b1a268b7936486#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:8f9bf83c78a9eb13#G3-en-02", "sample_id": "chestx_ray14:8f9bf83c78a9eb13#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:ef1c2e89142e738f#G3-en-02", "sample_id": "chestx_ray14:ef1c2e89142e738f#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:cd6f819afe87ff42#G3-zh-05", "sample_id": "chestx_ray14:cd6f819afe87ff42#G3-zh-05", "stage": "parse", "error": "TeacherError: crop 必须给框"}
+{"custom_id": "traj-chestx_ray14:5e9a90e741e1ac67#G3-en-03", "sample_id": "chestx_ray14:5e9a90e741e1ac67#G3-en-03", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:3779b6eda00efb4a#G3-en-02", "sample_id": "chestx_ray14:3779b6eda00efb4a#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:1c6512c9a3028e26#G3-en-02", "sample_id": "chestx_ray14:1c6512c9a3028e26#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:05b12462848daa96#G3-en-02", "sample_id": "chestx_ray14:05b12462848daa96#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:79d50ece2cd92eec#G2-en-01", "sample_id": "chestx_ray14:79d50ece2cd92eec#G2-en-01", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:b91524003163b3cb#G3-en-02", "sample_id": "chestx_ray14:b91524003163b3cb#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}
+{"custom_id": "traj-chestx_ray14:96e010132bbe11f5#G3-en-02", "sample_id": "chestx_ray14:96e010132bbe11f5#G3-en-02", "stage": "parse", "error": "TeacherError: steps 必须是长度 3 的数组，实际 1"}

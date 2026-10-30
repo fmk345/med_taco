@@ -1,0 +1,207 @@
+# MedTACO 全流程配置。模块通过 medtaco.utils.config.load_config 读取，
+# 点号访问：cfg.rl.alpha_1；命令行覆盖：--set rl.alpha_2=0.1
+
+seed: 42
+log_level: INFO
+
+paths:
+  root: /mnt/dolphinfs/hdd_pool/docker/user/hadoop-speech-dolphinfs/hadoop-speech/users/fengmingkuan/workspace/med_taco/data
+  raw: ${paths.root}/raw            # 原始数据集落地
+  processed: ${paths.root}/processed  # 统一成 png + sidecar json
+  samples: ${paths.root}/samples     # 统一 Sample jsonl
+  questions: ${paths.root}/questions  # 问题池（含被过滤掉的，便于复盘）
+  trajectories: ${paths.root}/trajectories  # 教师轨迹（含被拒的）
+  train: ${paths.root}/train         # 可用于训练的最终 jsonl
+  ckpt: ${paths.root}/ckpt
+  logs: ${paths.root}/logs
+
+# ---------------------------------------------------------------- 阶段 0-1 数据
+data:
+  dedup:
+    phash_hamming: 6        # 全图 pHash 判重阈值
+    tile_hash: true         # 多尺度分块哈希（pHash 对"大图里的小病灶"是盲的）
+    tile_grid: 3            # 3x3 分块
+    min_tile_side: 256
+  resolution:
+    zoom_min_side: 1024     # 长边 < 此值的图不参与 zoom 任务（否则训练的是插值）
+    max_side_cap: 4096      # 超长边统一缩到 4K，保留原始矩阵另存 sidecar
+  contamination:
+    minhash_ngram: 5
+    minhash_thresh: 0.8
+    # 评测集上游源，训练数据必须源级排除
+    exclude_sources:
+      - MedXpertQA
+      - GMAI-MMBench
+      - VQA-RAD
+      - PathVQA
+      - SLAKE
+      - OmniMedVQA
+      - MMMU
+      - VStar
+      - BLINK
+      - HR-Bench
+      - ZoomBench
+  commercial_only: false    # true 时只保留 commercial_ok 的样本（商用轨）
+  # 每个数据集的许可与工具可用性，供 collect.py 校验
+  datasets:
+    Mock:          {tier: A, license: synthetic-mock, commercial: true}   # 离线自造，仅用于跑通链路
+    MS-CXR:        {tier: A, license: PhysioNet-DUA, commercial: false}
+    ChestImaGenome: {tier: A, license: PhysioNet-DUA, commercial: false}
+    VinDr-CXR:     {tier: A, license: PhysioNet-DUA, commercial: false}
+    VinDr-CXR-VQA: {tier: A, license: CC-BY-4.0-annot/DUA-images, commercial: false}
+    ChestX-ray14:  {tier: A, license: public-domain, commercial: true}
+    PadChest:      {tier: A, license: non-commercial, commercial: false}
+    PadChest-GR:   {tier: A, license: non-commercial, commercial: false}
+    SLAKE:         {tier: A, license: research-only, commercial: false}
+    LIDC-IDRI:     {tier: A, license: CC-BY-3.0, commercial: true}
+    DeepLesion:    {tier: A, license: public-domain, commercial: true}
+    CT-RATE:       {tier: A, license: CC-BY-NC-SA-4.0, commercial: false}
+    ReXGroundingCT: {tier: A, license: non-commercial, commercial: false}
+    CAMELYON16:    {tier: A, license: open, commercial: true}
+    CAMELYON17:    {tier: A, license: open, commercial: true}
+    ISIC:          {tier: A, license: open, commercial: true}
+    HAM10000:      {tier: A, license: CC-BY-NC-4.0, commercial: false}
+    Kvasir-SEG:    {tier: A, license: open, commercial: true}
+    CVC-ClinicDB:  {tier: A, license: open, commercial: true}
+    BUSI:          {tier: A, license: open, commercial: true}
+    BrEaST:        {tier: A, license: CC-BY-4.0, commercial: true}
+    IDRiD:         {tier: A, license: open, commercial: true}
+    Object-CXR:    {tier: A, license: open, commercial: true}
+    TBX11K:        {tier: A, license: open, commercial: true}
+    VinDr-Mammo:   {tier: A, license: PhysioNet-DUA, commercial: false}
+    VQA-RAD:       {tier: B, license: research-only, commercial: false}
+    PathVQA:       {tier: B, license: research-only, commercial: false}
+    PMC-VQA:       {tier: B, license: research-only, commercial: false}
+    OmniMedVQA:    {tier: B, license: per-source, commercial: false}
+    GMAI-MMBench:  {tier: B, license: CC-BY-NC-SA-4.0, commercial: false}
+    MedQA:         {tier: C, license: open, commercial: true}
+    MedMCQA:       {tier: C, license: open, commercial: true}
+
+# ---------------------------------------------------------------- 阶段 2 问题合成
+qgen:
+  target_prompts: 40000      # 过滤后的目标量（候选约 150k）
+  generators: [G1, G2, G3, G4, G5]
+  # 正负样本比例：G3 是无工具题，必须占 ~40%
+  target_negative_ratio: 0.40
+  yes_no_max_ratio: 0.05     # 二元题上限，避免 answer bias
+  multi_scale_nest: [2, 3]   # G2 的嵌套层数
+  # 生成器权重（相对产能，不是硬配额，最终由过滤决定）
+  mix: {G1: 0.40, G2: 0.20, G3: 0.25, G4: 0.08, G5: 0.07}
+  filters:
+    dual_model_agree: true
+    dual_model_b: qwen3-vl-32b     # 本地模型名，仅作接口占位
+    tool_necessity_pass8: 8        # 无工具 pass@8 全对 -> 剔除
+    max_candidate_questions: 150000
+
+# ---------------------------------------------------------------- 阶段 3 轨迹合成
+teacher:
+  provider: anthropic
+  model: claude-opus-5
+  price_in_per_mtok: 5.0
+  price_out_per_mtok: 25.0
+  batch_discount: 0.5
+  use_batch: true
+  batch_max_requests: 100000
+  batch_max_bytes: 268435456
+  tmp_upload_dir: ${paths.processed}/_upload
+  max_images_per_request: 20
+  max_side_px: 2576          # 该代模型的高清档上限
+  max_tokens: 8192
+  temperature: 0.7
+  max_retries: 4
+  requests_per_minute: 89    # OTPM 才是瓶颈，见 PROPOSAL §5.1
+  concurrency: 8
+  # 每条轨迹最多几次工具调用（与 rl.max_turns 对齐）
+  max_calls: 6
+  # 每轮裁剪返回图的长边上限，避免上下文爆炸
+  observation_max_side: 1024
+  jpeg_quality: 90
+
+validate:
+  premise_perturbation:
+    enabled: true
+    # 用面积匹配的随机裁剪替换真实裁剪，答案必须变化，否则判为"装饰性裁剪"
+    area_match_tol: 0.25     # 面积比容差
+    n_replacement_trials: 3
+    min_answer_change: 1     # 至少几次试验里答案发生变化
+  synonym_perturbation:
+    enabled: true
+    # 病名同义改写后答案应保持一致，用于估判分器噪声
+    n_trials: 2
+  no_tool_ablation:
+    enabled: true
+    # 不给工具直接问，答对则说明工具非必需
+    model: qwen3-vl-8b
+
+# ---------------------------------------------------------------- 阶段 4 SFT
+sft:
+  base_model: Qwen/Qwen3-VL-8B-Instruct
+  epochs: 3
+  lr: 1.0e-5
+  batch_size: 32
+  grad_accum: 2
+  max_len: 16384
+  warmup_ratio: 0.03
+  # 观测 token 必须 loss-mask（返回图 + 沙箱输出）
+  mask_observation_tokens: true
+  # 混入通用数据防遗忘（DeepEyes 反例：MathVerse 45.6->38.1）
+  general_mix_ratio: 0.10
+  gate:
+    min_tool_call_rate: 0.55   # 验收闸门
+    min_tool_success_rate: 0.95
+    min_answer_change_rate: 0.60
+    max_over_call_rate: 0.25
+
+# ---------------------------------------------------------------- 阶段 5 RL
+rl:
+  framework: verl
+  alpha_1: 1.0
+  alpha_2: 0.15
+  group_size: 8
+  temperature: 1.0
+  batch_size: 128
+  lr: 1.0e-6
+  kl_coef: 0.0
+  clip_eps: 0.2              # TACO 原文未给，标注为 our choice
+  max_turns: 6
+  max_len: 32768
+  probe:
+    max_tokens: 32
+    temperature: 0.0
+    delimiter: "</think>\n<answer>"
+    fork_method: radix          # radix | full_recompute
+    collect_staged: true        # 分级探针（我们的扩展）
+  advantage:
+    zero_var_policy: skip_group  # skip_group | eps_floor
+    std_eps: 1.0e-6
+    answer_tokens_mode: paper    # paper | always
+  loss:
+    two_pass: true             # 必须两趟，否则 agg_loss 悄悄改 α2 尺度
+  loc_aux:
+    enabled: true
+    weight: 0.05               # λ_loc ≤ 0.1，独立通道
+  stop:
+    repeat_ratio: 0.5          # Rabin-Karp 子串重复超过 50% 长度即停（Thyme）
+  over_turn_masking: true
+  sandbox:
+    backend: gvisor            # gvisor | subprocess
+    timeout_s: 10
+    mem_mb: 2048
+    allow_imports: [math, statistics]
+    blacklist_attrs: [__subclasses__, __globals__, __builtins__, __code__, __class__]
+
+# ---------------------------------------------------------------- 阶段 6 评测
+eval:
+  bootstrap_n: 2000
+  metrics: [acc, veg, iou, call_rate, tokens]
+  veg:
+    corrupt_modes: [random_crop_area_matched, shuffle_pixels, blackout]
+  sets:
+    medical: [MedXpertQA-MM, GMAI-MMBench, SLAKE-EN, VQA-RAD, PathVQA, OmniMedVQA]
+    general: [VStar-191, HR-Bench-4K, HR-Bench-8K, BLINK, ZoomBench]
+  devices: auto
+  judge:
+    # 仅离线评测用；线上 R_ORM 必须是确定性规则（PROPOSAL §7.2.1）
+    enabled: true
+    models: [claude-opus-5, gpt-5]   # ≥2 个不同模型族
+    human_calib_n: 300
