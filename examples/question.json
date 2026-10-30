@@ -1,0 +1,44 @@
+{
+  "id": "chestx_ray14:5b07627b32a7dae4#G1-zh-05",
+  "image": "examples/images/chestx_ray14_00018762_001.png",
+  "question": "图中标记框内的Mass与周围组织相比，边界是否清晰？",
+  "answer": "no",
+  "dataset": "ChestX-ray14",
+  "tier": "A",
+  "answer_type": "closed",
+  "boxes": [
+    [
+      683.235555555556,
+      662.509045138889,
+      765.1555555555559,
+      739.8779340277779,
+      "Mass"
+    ]
+  ],
+  "masks": [],
+  "license": "public-domain",
+  "commercial_ok": true,
+  "meta": {
+    "source_dataset": "ChestX-ray14",
+    "has_region": true,
+    "image_id": "00018762_001.png",
+    "finding": "Mass",
+    "need_crop": true,
+    "generator": "G1",
+    "is_negative": false,
+    "template_id": "G1-zh-05",
+    "template_lang": "zh",
+    "yes_no": true,
+    "source_sample_id": "chestx_ray14:5b07627b32a7dae4",
+    "rewritten": false,
+    "filter": {
+      "agree": "skipped",
+      "agree_note": "no_agree_fn",
+      "necessity": "skipped",
+      "necessity_note": "no_pass8_fn",
+      "route": "kept"
+    },
+    "answer_source": "teacher_final_answer",
+    "answer_source_traj": "traj-chestx_ray14:5b07627b32a7dae4#G1-zh-05"
+  }
+}
